@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>THEY LIVE · SCAN</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=VT323&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+:root { --red:#e8291a; --amber:#d4821a; --green:#00cc50; --white:#f5f0e8; }
+html, body { width:100%; height:100%; background:#000; color:var(--white); font-family:'DM Mono',monospace; overflow:hidden; position:fixed; inset:0; }
+
+/* ── API SCREEN ── */
+#api-screen {
+  position:absolute; inset:0; z-index:200; background:#090603;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; padding:28px 22px;
+}
+.api-logo { font-family:'Bebas Neue',sans-serif; font-size:2rem; letter-spacing:8px; margin-bottom:4px; }
+.api-logo em { color:var(--red); font-style:normal; }
+.api-sub { font-size:0.5rem; letter-spacing:4px; color:rgba(245,240,232,0.2); margin-bottom:28px; text-transform:uppercase; }
+.api-card { width:100%; max-width:380px; border:1px solid rgba(245,240,232,0.08); border-radius:12px; background:rgba(255,255,255,0.02); padding:22px; display:flex; flex-direction:column; gap:14px; }
+.provider-row { display:flex; gap:6px; }
+.p-tab { flex:1; padding:7px; border-radius:6px; border:1px solid rgba(245,240,232,0.1); background:transparent; font-family:'DM Mono',monospace; font-size:0.52rem; letter-spacing:2px; text-transform:uppercase; color:rgba(245,240,232,0.28); cursor:pointer; text-align:center; transition:all 0.2s; }
+.p-tab.active.gemini { border-color:#4d8af0; color:#7badf8; background:rgba(77,138,240,0.07); }
+.p-tab.active.claude { border-color:var(--red); color:#ff7b70; background:rgba(232,41,26,0.07); }
+.free-pill { font-size:0.38rem; letter-spacing:1px; padding:1px 5px; border-radius:2px; background:rgba(0,204,80,0.12); color:var(--green); border:1px solid rgba(0,204,80,0.25); vertical-align:middle; margin-left:3px; }
+.f-label { font-size:0.5rem; letter-spacing:3px; color:rgba(245,240,232,0.28); text-transform:uppercase; margin-bottom:5px; }
+.key-wrap { position:relative; }
+#api-key-input { width:100%; background:rgba(0,0,0,0.5); border:1px solid rgba(245,240,232,0.1); border-radius:6px; padding:11px 40px 11px 13px; color:var(--white); font-family:'DM Mono',monospace; font-size:0.68rem; letter-spacing:1px; outline:none; transition:border-color 0.2s; -webkit-appearance:none; }
+#api-key-input:focus { border-color:rgba(245,240,232,0.25); }
+#api-key-input::placeholder { color:rgba(245,240,232,0.18); font-size:0.6rem; }
+.eye-btn { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:rgba(245,240,232,0.25); cursor:pointer; font-size:0.95rem; padding:4px; }
+.hint { font-size:0.5rem; letter-spacing:0.5px; line-height:1.9; color:rgba(245,240,232,0.2); }
+.hint a { color:rgba(245,240,232,0.38); text-decoration:none; border-bottom:1px solid rgba(245,240,232,0.15); }
+.go-btn { width:100%; padding:12px; background:var(--red); color:white; border:none; font-family:'DM Mono',monospace; font-size:0.62rem; letter-spacing:4px; text-transform:uppercase; cursor:pointer; border-radius:6px; transition:opacity 0.2s, transform 0.12s; }
+.go-btn:active { transform:scale(0.97); }
+.go-btn:disabled { opacity:0.3; cursor:not-allowed; }
+.api-err { font-size:0.52rem; letter-spacing:1px; color:var(--red); text-align:center; min-height:1em; line-height:1.6; }
+
+/* ── CAMERA LAYER ──
+   Video sits behind the effect canvas.
+   object-fit:contain keeps the full frame visible with no zoom.
+   A black letterbox appears if aspect ratios don't match — that's correct.
+*/
+#cam-wrap { position:absolute; inset:0; display:none; background:#000; }
+#video {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  object-fit:contain;   /* NO zoom — full frame always visible */
+  display:block;
+}
+
+/* Effect canvas must exactly match the video's rendered rectangle.
+   We recalculate its size/position in JS to match object-fit:contain. */
+#effect-canvas {
+  position:absolute;
+  display:block;
+  pointer-events:none;
+}
+
+#capture-canvas { display:none; }
+
+/* ── OVERLAY LAYER — terminals, HUD chrome ── */
+#overlay-layer { position:absolute; inset:0; pointer-events:none; z-index:20; }
+.corner { position:absolute; width:20px; height:20px; pointer-events:none; }
+.corner.tl { top:14px; left:14px; border-top:1px solid rgba(245,240,232,0.18); border-left:1px solid rgba(245,240,232,0.18); }
+.corner.tr { top:14px; right:14px; border-top:1px solid rgba(245,240,232,0.18); border-right:1px solid rgba(245,240,232,0.18); }
+.corner.bl { bottom:115px; left:14px; border-bottom:1px solid rgba(245,240,232,0.18); border-left:1px solid rgba(245,240,232,0.18); }
+.corner.br { bottom:115px; right:14px; border-bottom:1px solid rgba(245,240,232,0.18); border-right:1px solid rgba(245,240,232,0.18); }
+
+/* ── NUTRITION TERMINAL ── */
+.nutrition-terminal {
+  position:absolute; background:rgba(0,0,0,0.94); border:1px solid rgba(0,204,80,0.55);
+  border-radius:4px; padding:8px 10px; font-family:'VT323',monospace;
+  font-size:clamp(0.7rem,2.2vw,0.9rem); line-height:1.4; pointer-events:none;
+  animation:termIn 0.25s ease forwards; box-shadow:0 0 12px rgba(0,204,80,0.12);
+  overflow:hidden; z-index:25;
+}
+@keyframes termIn { from{opacity:0;transform:scaleY(0.85);}to{opacity:1;transform:scaleY(1);} }
+.term-header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0,204,80,0.18); padding-bottom:4px; margin-bottom:4px; }
+.term-title  { font-size:clamp(0.65rem,2vw,0.8rem); color:var(--green); letter-spacing:2px; }
+.term-product{ font-size:clamp(0.6rem,1.8vw,0.75rem); color:var(--white); letter-spacing:1px; margin-bottom:3px; }
+.term-row    { display:flex; gap:5px; align-items:flex-start; font-size:clamp(0.6rem,1.8vw,0.78rem); margin:1px 0; }
+.term-flag   { color:var(--red); flex-shrink:0; }
+.term-flag.ok{ color:var(--green); }
+.term-add    { color:#ff7b70; }
+.term-add.ok { color:rgba(245,240,232,0.42); }
+.term-why    { color:rgba(245,240,232,0.3); font-size:clamp(0.5rem,1.5vw,0.63rem); padding-left:12px; margin-bottom:2px; }
+.term-verdict{ margin-top:4px; padding-top:4px; border-top:1px solid rgba(245,240,232,0.08); font-size:clamp(0.5rem,1.5vw,0.63rem); color:rgba(245,240,232,0.38); line-height:1.5; }
+.term-threat { font-size:clamp(0.55rem,1.6vw,0.7rem); letter-spacing:2px; margin-bottom:1px; }
+.t-high { color:var(--red); }   .t-med { color:var(--amber); }
+.t-low  { color:#88ffaa; }      .t-clean{ color:rgba(245,240,232,0.32); }
+.nutrition-terminal::after { content:''; position:absolute; inset:0; background:repeating-linear-gradient(0deg,transparent 0px,transparent 3px,rgba(0,0,0,0.07) 3px,rgba(0,0,0,0.07) 4px); pointer-events:none; }
+
+/* ── TOP HUD ── */
+#top-hud { position:absolute; top:0; left:0; right:0; z-index:30; display:none; padding:max(env(safe-area-inset-top,10px),10px) 16px 14px; background:linear-gradient(to bottom,rgba(0,0,0,0.65) 0%,transparent 100%); align-items:center; justify-content:space-between; }
+.hud-logo { font-family:'Bebas Neue',sans-serif; font-size:clamp(1rem,3.5vw,1.4rem); letter-spacing:5px; }
+.hud-logo em { color:var(--red); font-style:normal; }
+.hud-right { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+.rec-pill { display:flex; align-items:center; gap:4px; font-size:0.46rem; letter-spacing:2px; color:var(--red); }
+.rec-dot  { width:5px; height:5px; border-radius:50%; background:var(--red); animation:blink 1s ease infinite; }
+@keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.08;} }
+.hud-provider { font-size:0.42rem; letter-spacing:2px; color:rgba(245,240,232,0.28); }
+
+/* Status pill — centered below top bar */
+#status-pill {
+  position:absolute; z-index:31; left:50%; transform:translateX(-50%);
+  top:max(env(safe-area-inset-top,46px),46px);
+  display:none; align-items:center; gap:6px;
+  background:rgba(0,0,0,0.6); backdrop-filter:blur(8px);
+  padding:4px 14px; border-radius:99px; white-space:nowrap;
+  font-size:0.44rem; letter-spacing:3px; text-transform:uppercase; color:rgba(245,240,232,0.35);
+  transition:color 0.2s;
+}
+#status-pill .sp-dot { width:4px; height:4px; border-radius:50%; background:currentColor; flex-shrink:0; }
+#status-pill.working { color:var(--amber); }
+#status-pill.working .sp-dot { animation:blink 0.5s ease infinite; }
+#status-pill.frozen  { color:var(--red); }
+#status-pill.autoon  { color:var(--green); }
+#status-pill.autoon  .sp-dot { animation:blink 1.5s ease infinite; }
+
+/* ── BOTTOM HUD ── */
+#bottom-hud {
+  position:absolute; bottom:0; left:0; right:0; z-index:30; display:none;
+  padding:14px 20px max(env(safe-area-inset-bottom,18px),18px);
+  background:linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 100%);
+  flex-direction:column; align-items:center; gap:10px;
+}
+
+/* Tally */
+#tally-strip { display:flex; gap:7px; align-items:center; justify-content:center; min-height:18px; }
+.tally-badge { font-size:0.46rem; letter-spacing:1px; padding:2px 8px; border-radius:2px; border:1px solid; text-transform:uppercase; }
+.tb-high  { color:var(--red);   border-color:rgba(232,41,26,0.4);  background:rgba(232,41,26,0.1); }
+.tb-med   { color:var(--amber); border-color:rgba(212,130,26,0.4); background:rgba(212,130,26,0.08); }
+.tb-clean { color:var(--green); border-color:rgba(0,204,80,0.3);   background:rgba(0,204,80,0.06); }
+
+/* Controls row */
+.ctrl-row { display:flex; align-items:center; justify-content:space-between; width:100%; max-width:320px; }
+
+/* Shutter */
+#shutter {
+  width:clamp(62px,16vw,72px); height:clamp(62px,16vw,72px); border-radius:50%;
+  border:3px solid rgba(245,240,232,0.6); background:transparent; cursor:pointer;
+  position:relative; display:flex; align-items:center; justify-content:center;
+  transition:transform 0.12s; -webkit-appearance:none; flex-shrink:0;
+}
+#shutter:active { transform:scale(0.9); }
+.sh-inner {
+  width:clamp(46px,11vw,54px); height:clamp(46px,11vw,54px);
+  border-radius:50%; background:var(--white); transition:background 0.2s, transform 0.15s;
+}
+#shutter.frozen  .sh-inner { background:var(--red); transform:scale(0.85); }
+#shutter.working::before {
+  content:''; position:absolute; inset:-6px; border-radius:50%;
+  border:2px solid transparent; border-top-color:var(--amber);
+  animation:spin 0.9s linear infinite;
+}
+@keyframes spin { to{ transform:rotate(360deg); } }
+
+.sh-wrap { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.sh-label { font-size:0.44rem; letter-spacing:2px; color:rgba(245,240,232,0.32); text-transform:uppercase; text-align:center; }
+
+/* Side buttons */
+.side-btn {
+  width:44px; height:44px; border-radius:50%;
+  border:1px solid rgba(245,240,232,0.14); background:rgba(0,0,0,0.5); backdrop-filter:blur(8px);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  cursor:pointer; gap:1px; -webkit-appearance:none; font-size:0.92rem; transition:transform 0.12s;
+}
+.side-btn:active { transform:scale(0.88); }
+.side-btn span:last-child { font-size:0.32rem; letter-spacing:1px; color:rgba(245,240,232,0.28); text-transform:uppercase; }
+
+/* Auto-scan toggle row */
+.auto-row {
+  display:flex; align-items:center; gap:10px; justify-content:center;
+  font-size:0.46rem; letter-spacing:2px; color:rgba(245,240,232,0.3); text-transform:uppercase;
+}
+.tog-track {
+  width:36px; height:20px; border-radius:10px; background:rgba(245,240,232,0.12);
+  position:relative; transition:background 0.3s; cursor:pointer; flex-shrink:0;
+}
+.tog-track::after {
+  content:''; position:absolute;
+  width:14px; height:14px; border-radius:50%; background:white;
+  top:3px; left:3px; transition:transform 0.3s; box-shadow:0 1px 2px rgba(0,0,0,0.3);
+}
+.tog-track.on { background:var(--green); }
+.tog-track.on::after { transform:translateX(16px); }
+#auto-label { transition:color 0.3s; }
+.tog-track.on ~ #auto-label { color:var(--green); }
+
+#scan-hint { font-size:0.42rem; letter-spacing:2px; color:rgba(245,240,232,0.2); text-transform:uppercase; text-align:center; }
+
+/* ── ERROR TOAST ── */
+#err-toast {
+  position:absolute; top:68px; left:14px; right:14px; z-index:50;
+  background:rgba(28,5,3,0.97); border:1px solid rgba(232,41,26,0.3);
+  border-radius:8px; padding:10px 13px;
+  transform:translateY(-8px); opacity:0; transition:all 0.3s cubic-bezier(0.34,1.3,0.64,1);
+  pointer-events:none; display:none;
+}
+#err-toast.show { transform:translateY(0); opacity:1; }
+.et-title  { font-family:'Bebas Neue',sans-serif; font-size:0.7rem; letter-spacing:3px; color:var(--red); margin-bottom:3px; }
+.et-msg    { font-size:0.5rem; letter-spacing:1px; line-height:1.6; color:rgba(245,240,232,0.42); }
+.et-change { margin-top:6px; font-size:0.44rem; letter-spacing:2px; color:rgba(245,240,232,0.25); cursor:pointer; text-decoration:underline; background:none; border:none; font-family:'DM Mono',monospace; }
+</style>
+</head>
+<body>
+
+<!-- ── API SCREEN ── -->
+<div id="api-screen">
+  <div class="api-logo">THEY<em>LIVE</em></div>
+  <div class="api-sub">Grocery Scanner · AI Vision</div>
+  <div class="api-card">
+    <div>
+      <div class="f-label">AI Provider</div>
+      <div class="provider-row">
+        <div class="p-tab gemini active" id="tab-gemini" onclick="setProvider('gemini')">Gemini <span class="free-pill">FREE</span></div>
+        <div class="p-tab claude"        id="tab-claude" onclick="setProvider('claude')">Claude</div>
+      </div>
+    </div>
+    <div>
+      <div class="f-label" id="key-label">Gemini API Key</div>
+      <div class="key-wrap">
+        <input type="password" id="api-key-input" placeholder="AIza..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+        <button class="eye-btn" onclick="toggleEye()">👁</button>
+      </div>
+    </div>
+    <div class="hint" id="key-hint">
+      Free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> — 1,500 scans/day, no card needed.<br>
+      Key is sent only to Google's API — never stored.
+    </div>
+    <button class="go-btn" id="go-btn" onclick="startApp()">Start Scanning</button>
+    <div class="api-err" id="api-err"></div>
+  </div>
+</div>
+
+<!-- ── CAMERA ── -->
+<div id="cam-wrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="effect-canvas"></canvas>
+  <canvas id="capture-canvas"></canvas>
+</div>
+
+<div id="overlay-layer">
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+</div>
+
+<div id="status-pill"><div class="sp-dot"></div><span id="sp-text">READY</span></div>
+
+<div id="err-toast">
+  <div class="et-title">⚠ ERROR</div>
+  <div class="et-msg" id="et-msg">—</div>
+  <button class="et-change" onclick="showApiScreen()">Change API Key</button>
+</div>
+
+<!-- ── TOP HUD ── -->
+<div id="top-hud">
+  <div class="hud-logo">THEY<em>LIVE</em></div>
+  <div class="hud-right">
+    <div class="rec-pill"><div class="rec-dot"></div>LIVE</div>
+    <div class="hud-provider" id="hud-provider">GEMINI VISION</div>
+  </div>
+</div>
+
+<!-- ── BOTTOM HUD ── -->
+<div id="bottom-hud">
+  <div id="tally-strip"></div>
+
+  <div class="ctrl-row">
+    <!-- Flip -->
+    <button class="side-btn" onclick="flipCamera()"><span>🔄</span><span>Flip</span></button>
+
+    <!-- Shutter -->
+    <div class="sh-wrap">
+      <button id="shutter" onclick="onShutter()"><div class="sh-inner"></div></button>
+      <div class="sh-label" id="sh-label">SNAP &amp; LOCK</div>
+    </div>
+
+    <!-- Clear -->
+    <button class="side-btn" onclick="clearAll()"><span>✕</span><span>Clear</span></button>
+  </div>
+
+  <!-- Auto-scan toggle -->
+  <div class="auto-row">
+    <span>Auto-Scan</span>
+    <div class="tog-track" id="auto-tog" onclick="toggleAutoScan()"></div>
+    <span id="auto-label">OFF</span>
+  </div>
+
+  <div id="scan-hint">Tap shutter to capture &amp; analyse</div>
+</div>
+
+<script>
+// ═══════════════════════════
+//  STATE
+// ═══════════════════════════
+const S = { IDLE:'IDLE', WORKING:'WORKING', FROZEN:'FROZEN' };
+let state      = S.IDLE;
+let apiKey     = '';
+let provider   = 'gemini';
+let stream     = null;
+let facingMode = 'environment';
+let products   = [];
+let autoScan   = false;         // off by default
+let autoTimer  = null;
+const AUTO_INTERVAL = 15000;    // 15s when auto is on
+const MIN_GAP       = 12000;    // minimum ms between any two API calls
+let lastCall        = 0;
+
+const video   = document.getElementById('video');
+const effCvs  = document.getElementById('effect-canvas');
+const capCvs  = document.getElementById('capture-canvas');
+const effCtx  = effCvs.getContext('2d');
+const capCtx  = capCvs.getContext('2d');
+const ovLayer = document.getElementById('overlay-layer');
+
+// Video render rect (set by fitCanvas)
+let vRect = { x:0, y:0, w:0, h:0 };
+
+// ═══════════════════════════
+//  PROVIDER / KEY
+// ═══════════════════════════
+function setProvider(p) {
+  provider = p;
+  document.getElementById('tab-gemini').classList.toggle('active', p==='gemini');
+  document.getElementById('tab-claude').classList.toggle('active', p==='claude');
+  document.getElementById('key-label').textContent = p==='gemini' ? 'Gemini API Key' : 'Anthropic API Key';
+  document.getElementById('api-key-input').placeholder = p==='gemini' ? 'AIza...' : 'sk-ant-api03-...';
+  document.getElementById('key-hint').innerHTML = p==='gemini'
+    ? 'Free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> — 1,500 scans/day, no card needed.<br>Key sent only to Google\'s API.'
+    : 'Key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> — ~$0.01/scan.<br>Key sent only to Anthropic\'s API.';
+  document.getElementById('api-key-input').value = '';
+  document.getElementById('api-err').textContent = '';
+}
+
+function toggleEye() {
+  const i = document.getElementById('api-key-input');
+  i.type = i.type==='password' ? 'text' : 'password';
+}
+
+async function startApp() {
+  const key   = document.getElementById('api-key-input').value.trim();
+  const errEl = document.getElementById('api-err');
+  const btn   = document.getElementById('go-btn');
+  if (!key) { errEl.textContent='Enter your API key.'; return; }
+  if (provider==='gemini' && !key.startsWith('AIza')) { errEl.textContent='Gemini keys start with "AIza".'; return; }
+  if (provider==='claude' && !key.startsWith('sk-ant-')) { errEl.textContent='Anthropic keys start with "sk-ant-".'; return; }
+  errEl.textContent=''; btn.disabled=true; btn.textContent='Connecting…';
+  const ok = await validateKey(key);
+  if (!ok) { errEl.textContent='Key rejected — check it and try again.'; btn.disabled=false; btn.textContent='Start Scanning'; return; }
+  apiKey = key;
+  btn.disabled=false; btn.textContent='Start Scanning';
+
+  document.getElementById('api-screen').style.display = 'none';
+  document.getElementById('cam-wrap').style.display    = 'block';
+  document.getElementById('top-hud').style.display     = 'flex';
+  document.getElementById('bottom-hud').style.display  = 'flex';
+  document.getElementById('status-pill').style.display = 'flex';
+  document.getElementById('hud-provider').textContent  = (provider==='gemini'?'GEMINI':'CLAUDE')+' VISION';
+
+  await initCamera();
+  startRenderLoop();
+  setStatus('IDLE', 'READY · TAP SHUTTER');
+}
+
+async function validateKey(key) {
+  try {
+    if (provider==='gemini') {
+      return (await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`)).ok;
+    } else {
+      const r = await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:5,messages:[{role:'user',content:'hi'}]})
+      });
+      return r.ok || r.status===400;
+    }
+  } catch(e){ return true; }
+}
+
+function showApiScreen() {
+  clearAutoTimer();
+  state = S.IDLE;
+  document.getElementById('api-screen').style.display = 'flex';
+  ['cam-wrap','top-hud','bottom-hud','status-pill'].forEach(id=>document.getElementById(id).style.display='none');
+}
+
+// ═══════════════════════════
+//  CAMERA
+//  object-fit:contain on the video element prevents any zoom.
+//  fitCanvas() computes the actual rendered rectangle so the
+//  effect canvas and overlays align exactly with the video pixels.
+// ═══════════════════════════
+async function initCamera() {
+  try {
+    if (stream) stream.getTracks().forEach(t=>t.stop());
+    // Request exact environment camera, no extra constraints that might force crop
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ ideal: facingMode }, width:{ideal:1280}, height:{ideal:720} },
+      audio:false
+    });
+    video.srcObject = stream;
+    await video.play();
+    fitCanvas();
+  } catch(e) {
+    showErr('Camera access denied. Check permissions and reload.');
+  }
+}
+
+async function flipCamera() {
+  facingMode = facingMode==='environment'?'user':'environment';
+  clearAll();
+  await initCamera();
+}
+
+// Compute where the video is actually rendered inside the container
+// (object-fit:contain letterboxes, so video may not fill the whole div)
+function fitCanvas() {
+  const cw = video.offsetWidth  || window.innerWidth;
+  const ch = video.offsetHeight || window.innerHeight;
+  const vw = video.videoWidth   || 1280;
+  const vh = video.videoHeight  || 720;
+
+  if (!vw || !vh) {
+    // Video not ready yet — retry
+    setTimeout(fitCanvas, 200);
+    return;
+  }
+
+  const videoAR   = vw / vh;
+  const containerAR = cw / ch;
+
+  let rw, rh, rx, ry;
+  if (videoAR > containerAR) {
+    // Video is wider — pillarbox top/bottom
+    rw = cw;
+    rh = cw / videoAR;
+    rx = 0;
+    ry = (ch - rh) / 2;
+  } else {
+    // Video is taller — letterbox left/right
+    rh = ch;
+    rw = ch * videoAR;
+    rx = (cw - rw) / 2;
+    ry = 0;
+  }
+
+  vRect = { x: rx, y: ry, w: rw, h: rh };
+
+  // Position and size the effect canvas to exactly match the video rect
+  effCvs.style.left   = rx + 'px';
+  effCvs.style.top    = ry + 'px';
+  effCvs.style.width  = rw + 'px';
+  effCvs.style.height = rh + 'px';
+  effCvs.width  = Math.round(rw);
+  effCvs.height = Math.round(rh);
+}
+
+// Re-fit if window resizes or orientation changes
+window.addEventListener('resize',            () => { fitCanvas(); if (state===S.FROZEN) bakeFrozenFrame(); });
+window.addEventListener('orientationchange', () => { setTimeout(()=>{ fitCanvas(); if (state===S.FROZEN) bakeFrozenFrame(); }, 300); });
+video.addEventListener('loadedmetadata',     fitCanvas);
+
+// ═══════════════════════════
+//  RENDER LOOP
+//  Draws live video → effect canvas, then paints toxic overlays.
+//  In FROZEN state the loop is paused; the baked still stays.
+// ═══════════════════════════
+let rafId = null;
+
+function startRenderLoop() {
+  function loop() {
+    rafId = requestAnimationFrame(loop);
+    if (state === S.FROZEN) return;           // keep baked still
+    if (video.readyState < 2) return;
+
+    const w = effCvs.width, h = effCvs.height;
+    if (!w || !h) return;
+
+    // Draw the video frame scaled to fill the effect canvas exactly
+    effCtx.drawImage(video, 0, 0, w, h);
+
+    // Paint toxic regions (live preview, updates every frame)
+    if (products.length) drawToxicRegions(w, h);
+  }
+  loop();
+}
+
+// ═══════════════════════════
+//  TOXIC REGION RENDERING
+//  Coordinates in products are 0-1 fractions of the VIDEO frame.
+//  The effect canvas IS the video rect, so we just multiply by canvas size.
+// ═══════════════════════════
+function drawToxicRegions(cw, ch) {
+  products.forEach(p => {
+    const pos = p.position;
+    if (!pos) return;
+
+    // Map 0-1 coords to canvas pixels
+    const px = Math.round(pos.x * cw);
+    const py = Math.round(pos.y * ch);
+    const pw = Math.round(pos.w * cw);
+    const ph = Math.round(pos.h * ch);
+    if (pw < 4 || ph < 4) return;
+
+    const cx = Math.max(0, px);
+    const cy = Math.max(0, py);
+    const cw2 = Math.min(pw, cw - cx);
+    const ch2 = Math.min(ph, ch - cy);
+    if (cw2 < 2 || ch2 < 2) return;
+
+    if (p.threat === 'high' || p.threat === 'med') {
+      // Desaturate region to greyscale
+      try {
+        const id = effCtx.getImageData(cx, cy, cw2, ch2);
+        const d  = id.data;
+        const darken = p.threat==='high' ? 0.68 : 0.82;
+        for (let i = 0; i < d.length; i += 4) {
+          const g = (0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]) * darken;
+          d[i] = d[i+1] = d[i+2] = g;
+        }
+        effCtx.putImageData(id, cx, cy);
+      } catch(e) { /* tainted canvas guard */ }
+
+      // Coloured outline
+      const lw = p.threat==='high' ? 3 : 2;
+      effCtx.strokeStyle = p.threat==='high' ? '#e8291a' : '#d4821a';
+      effCtx.lineWidth   = lw;
+      effCtx.strokeRect(px + lw/2, py + lw/2, pw - lw, ph - lw);
+
+      // Label strip
+      const lh  = Math.max(16, Math.min(22, ph * 0.14));
+      const fs  = Math.max(8, Math.min(12, pw / 9));
+      effCtx.fillStyle = p.threat==='high' ? 'rgba(232,41,26,0.9)' : 'rgba(212,130,26,0.88)';
+      effCtx.fillRect(px, py, pw, lh);
+      effCtx.fillStyle    = 'white';
+      effCtx.font         = `600 ${fs}px "DM Mono",monospace`;
+      effCtx.textAlign    = 'left';
+      effCtx.textBaseline = 'middle';
+      const ico = p.threat==='high' ? '☠ ' : '⚠ ';
+      const lbl = (p.brand || p.name).toUpperCase().slice(0, Math.floor(pw / fs * 0.85));
+      effCtx.fillText(ico + lbl, px + 4, py + lh / 2);
+
+    } else {
+      // Clean / low — green tick strip only
+      const lh = Math.max(14, Math.min(18, ph * 0.12));
+      const fs = Math.max(7, Math.min(10, pw / 9));
+      effCtx.fillStyle    = 'rgba(0,160,60,0.72)';
+      effCtx.fillRect(px, py, pw, lh);
+      effCtx.fillStyle    = 'white';
+      effCtx.font         = `600 ${fs}px "DM Mono",monospace`;
+      effCtx.textAlign    = 'left';
+      effCtx.textBaseline = 'middle';
+      const lbl = '✓ ' + (p.brand || p.name).toUpperCase().slice(0, Math.floor(pw / fs * 0.85));
+      effCtx.fillText(lbl, px + 4, py + lh / 2);
+    }
+  });
+}
+
+// ═══════════════════════════
+//  SHUTTER
+// ═══════════════════════════
+function onShutter() {
+  if (state === S.WORKING) return;
+
+  if (state === S.FROZEN) {
+    resumeLive();
+    return;
+  }
+
+  doCapture();
+}
+
+async function doCapture() {
+  const now = Date.now();
+  if (now - lastCall < MIN_GAP) {
+    const secs = Math.ceil((MIN_GAP - (now - lastCall)) / 1000);
+    showErr(`Wait ${secs}s before scanning again.`);
+    return;
+  }
+
+  // Transition → WORKING
+  state = S.WORKING;
+  clearAutoTimer();
+  setStatus('WORKING', 'ANALYZING…');
+  document.getElementById('shutter').classList.add('working');
+  document.getElementById('sh-label').textContent = 'ANALYZING…';
+  hideErr();
+
+  // Capture frame from live video (not from effect canvas)
+  const vw = video.videoWidth  || 1280;
+  const vh = video.videoHeight || 720;
+  capCvs.width = vw; capCvs.height = vh;
+  capCtx.drawImage(video, 0, 0, vw, vh);
+  const b64 = capCvs.toDataURL('image/jpeg', 0.72).split(',')[1];
+  lastCall = Date.now();
+
+  try {
+    const results = provider==='gemini' ? await callGemini(b64) : await callClaude(b64);
+    products = results;
+    updateTally();
+    hideErr();
+
+    // Bake the frozen frame with overlays, render terminals
+    bakeFrozenFrame();
+    renderTerminals();
+
+    // Transition → FROZEN
+    state = S.FROZEN;
+    setStatus('FROZEN', 'FROZEN · TAP SHUTTER TO RESUME');
+    document.getElementById('shutter').classList.remove('working');
+    document.getElementById('shutter').classList.add('frozen');
+    document.getElementById('sh-label').textContent = 'TAP TO RESUME';
+
+  } catch(e) {
+    showErr(e.message || 'Scan failed. Try again.');
+    // Back to IDLE — don't freeze
+    state = S.IDLE;
+    document.getElementById('shutter').classList.remove('working');
+    setStatus('IDLE', 'READY · TAP SHUTTER');
+    document.getElementById('sh-label').textContent = 'SNAP & LOCK';
+    if (autoScan) startAutoTimer();
+  }
+}
+
+function resumeLive() {
+  state = S.IDLE;
+  ovLayer.querySelectorAll('.nutrition-terminal').forEach(el=>el.remove());
+  document.getElementById('shutter').classList.remove('frozen','working');
+  document.getElementById('sh-label').textContent = 'SNAP & LOCK';
+  setStatus('IDLE', autoScan ? 'AUTO-SCAN ON' : 'READY · TAP SHUTTER');
+  if (autoScan) startAutoTimer();
+}
+
+// ═══════════════════════════
+//  BAKE FROZEN FRAME
+//  Draws current video frame + toxic regions into the effect canvas,
+//  then the render loop stops touching it (state === FROZEN).
+// ═══════════════════════════
+function bakeFrozenFrame() {
+  fitCanvas(); // ensure canvas dimensions are current
+  const cw = effCvs.width, ch = effCvs.height;
+  effCtx.drawImage(video, 0, 0, cw, ch);
+  if (products.length) drawToxicRegions(cw, ch);
+}
+
+// ═══════════════════════════
+//  NUTRITION TERMINALS
+//  Overlaid on top of the frozen frame for flagged items.
+//  Positioned relative to product bounding boxes.
+// ═══════════════════════════
+function renderTerminals() {
+  ovLayer.querySelectorAll('.nutrition-terminal').forEach(el=>el.remove());
+
+  const flagged = products
+    .filter(p => p.flags && p.flags.length > 0 && p.position && (p.threat==='high'||p.threat==='med'))
+    .sort((a,b) => ['high','med'].indexOf(a.threat) - ['high','med'].indexOf(b.threat))
+    .slice(0, 2);
+
+  if (!flagged.length) return;
+
+  // Screen dimensions for clamping
+  const sw = window.innerWidth;
+  const sh = window.innerHeight;
+
+  // The video rect in screen coords
+  const vrx = vRect.x, vry = vRect.y, vrw = vRect.w, vrh = vRect.h;
+
+  flagged.forEach(p => {
+    const pos = p.position;
+    // Convert 0-1 product coords → screen coords
+    const px = vrx + pos.x * vrw;
+    const py = vry + pos.y * vrh;
+    const pw = pos.w * vrw;
+    const ph = pos.h * vrh;
+
+    const termW = Math.max(155, Math.min(pw * 0.98, 218));
+    const flagCount = Math.min(p.flags.length, 5);
+    const estH = 58 + flagCount * 34 + 36;
+
+    let left = px + 3;
+    let top  = py + 22; // below the label strip
+
+    // Clamp horizontally
+    if (left + termW > sw - 8) left = Math.max(4, sw - termW - 8);
+    // Clamp vertically — push up if too close to bottom controls
+    if (top + estH > sh - 125) top = Math.max(py - estH - 2, 4);
+
+    const term = document.createElement('div');
+    term.className = 'nutrition-terminal';
+    term.style.left  = Math.round(left) + 'px';
+    term.style.top   = Math.round(top)  + 'px';
+    term.style.width = Math.round(termW) + 'px';
+
+    const tWord  = p.threat==='high' ? '⚠ DANGER' : '⚠ WARNING';
+    const tClass = 't-' + p.threat;
+
+    const flagHTML = p.flags.slice(0, 5).map(f => {
+      const why = REASONS[f] || 'Potentially harmful additive';
+      return `<div class="term-row"><span class="term-flag">!</span><span class="term-add">${f}</span></div>`
+           + `<div class="term-why">${why}</div>`;
+    }).join('');
+
+    term.innerHTML = `
+      <div class="term-header">
+        <span class="term-title">// INGREDIENTS</span>
+        <span class="${tClass} term-threat">${tWord}</span>
+      </div>
+      <div class="term-product">${p.name}</div>
+      ${flagHTML}
+      <div class="term-verdict">${p.verdict}</div>`;
+
+    ovLayer.appendChild(term);
+  });
+}
+
+const REASONS = {
+  'Red 40':              'Petroleum dye · ADHD links in children',
+  'Yellow 5':            'Petroleum dye · allergic reactions',
+  'Yellow 6':            'Petroleum dye · adrenal tumors in animals',
+  'Blue 1':              'Synthetic dye · chromosome damage in studies',
+  'BHT':                 'Endocrine disruptor · banned in Japan & EU',
+  'BHA':                 'Possible carcinogen · CA Prop 65 listed',
+  'TBHQ':                'Immune effects · banned in Japan',
+  'HFCS':                'Metabolic disruption · linked to obesity',
+  'Sodium Benzoate':     'Forms benzene with Vit C (carcinogen)',
+  'Potassium Bromate':   'Carcinogen · banned EU, Canada, UK',
+  'Carrageenan':         'Gut inflammation · GI lesions in animals',
+  'Aspartame':           'IARC Group 2B possible carcinogen',
+  'Caramel Color 4-MEI': '4-MEI carcinogen formed in production',
+  'Azodicarbonamide':    'Banned EU & Australia · asthma links',
+  'Propyl Gallate':      'Possible endocrine disruptor',
+  'MSG':                 'Excitotoxin · sensitivity in some people',
+  'Titanium Dioxide':    'Banned EU food use · DNA damage in studies',
+  'Acesulfame-K':        'Possible carcinogen · limited long-term data',
+  'Sucralose':           'Alters gut microbiome · chlorinated compound',
+};
+
+// ═══════════════════════════
+//  AUTO SCAN TOGGLE
+// ═══════════════════════════
+function toggleAutoScan() {
+  autoScan = !autoScan;
+  const tog = document.getElementById('auto-tog');
+  const lbl = document.getElementById('auto-label');
+  tog.classList.toggle('on', autoScan);
+  lbl.textContent = autoScan ? 'ON' : 'OFF';
+  document.getElementById('scan-hint').textContent = autoScan
+    ? 'Auto-scanning every 15s · tap shutter to lock'
+    : 'Tap shutter to capture & analyse';
+
+  if (autoScan) {
+    setStatus('AUTOON', 'AUTO-SCAN ON · 15s');
+    if (state === S.IDLE) startAutoTimer();
+  } else {
+    clearAutoTimer();
+    if (state === S.IDLE) setStatus('IDLE', 'READY · TAP SHUTTER');
+  }
+}
+
+function startAutoTimer() {
+  clearAutoTimer();
+  autoTimer = setInterval(async () => {
+    if (state !== S.IDLE) return;
+    const now = Date.now();
+    if (now - lastCall < MIN_GAP) return;
+    // Silent bg scan — no freeze
+    try {
+      setStatus('WORKING', 'AUTO-SCANNING…');
+      const vw=video.videoWidth||1280, vh=video.videoHeight||720;
+      capCvs.width=vw; capCvs.height=vh;
+      capCtx.drawImage(video,0,0,vw,vh);
+      const b64 = capCvs.toDataURL('image/jpeg',0.65).split(',')[1];
+      lastCall = Date.now();
+      const results = provider==='gemini' ? await callGemini(b64) : await callClaude(b64);
+      if (state===S.IDLE) { products=results; updateTally(); hideErr(); }
+    } catch(e) {
+      if (e.message && (e.message.includes('key')||e.message.includes('limit')||e.message.includes('quota'))) showErr(e.message);
+    } finally {
+      if (state===S.IDLE) setStatus('AUTOON','AUTO-SCAN ON · 15s');
+    }
+  }, AUTO_INTERVAL);
+}
+
+function clearAutoTimer() { clearInterval(autoTimer); autoTimer=null; }
+
+// ═══════════════════════════
+//  AI CALLS
+// ═══════════════════════════
+const SYS = `You are a food-safety AI embedded in a grocery scanner app.
+Analyse this image. Identify every visible food or drink product.
+For each product assess ingredient toxicity.
+
+Respond with ONLY raw valid JSON — no markdown fences, no extra text:
+{"products":[{"name":"...","brand":"...","threat":"high|med|low|clean","flags":["Additive"],"verdict":"One sentence.","position":{"x":0.0,"y":0.0,"w":0.0,"h":0.0}}]}
+
+Rules:
+- position: 0.0–1.0 fractions of the image (x=left edge, y=top edge, w=width, h=height of the bounding box around the product)
+- threat: high = EU-banned / carcinogens / petroleum dyes; med = concerning; low = minor; clean = none
+- flags: use exact names from: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, Propyl Gallate, MSG, Titanium Dioxide, Acesulfame-K, Sucralose
+- If no food products are visible return: {"products":[]}
+- Estimate bounding boxes as accurately as possible from the image`;
+
+async function callGemini(b64) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:SYS}]}],
+      generationConfig:{temperature:0.1,maxOutputTokens:1400}
+    })
+  });
+  if (!res.ok) {
+    const e=await res.json().catch(()=>({}));
+    const m=e?.error?.message||`Gemini error ${res.status}`;
+    if (res.status===429) throw new Error('Rate limit reached. Wait 30s and try again.');
+    if (res.status===400) throw new Error('API key error: '+m);
+    throw new Error(m);
+  }
+  const data = await res.json();
+  let txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  txt = txt.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  try { return JSON.parse(txt).products||[]; }
+  catch(e) { throw new Error('Unexpected AI response format. Try again.'); }
+}
+
+async function callClaude(b64) {
+  const res = await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514', max_tokens:1400, system:SYS,
+      messages:[{role:'user',content:[
+        {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
+        {type:'text',text:'Identify all grocery products. Return JSON only.'}
+      ]}]
+    })
+  });
+  if (!res.ok){
+    const e=await res.json().catch(()=>({}));
+    if (res.status===401) throw new Error('Invalid API key.');
+    if (res.status===429) throw new Error('Rate limit reached. Wait a moment.');
+    throw new Error(e?.error?.message||`API error ${res.status}`);
+  }
+  const data=await res.json();
+  let txt=data.content.map(b=>b.text||'').join('').trim();
+  txt=txt.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  try { return JSON.parse(txt).products||[]; }
+  catch(e){ throw new Error('Unexpected AI response format. Try again.'); }
+}
+
+// ═══════════════════════════
+//  UI HELPERS
+// ═══════════════════════════
+function setStatus(cls, text) {
+  const p = document.getElementById('status-pill');
+  p.className = cls.toLowerCase();
+  document.getElementById('sp-text').textContent = text;
+}
+
+function updateTally() {
+  const strip = document.getElementById('tally-strip');
+  strip.innerHTML = '';
+  const h = products.filter(p=>p.threat==='high').length;
+  const m = products.filter(p=>p.threat==='med').length;
+  const s = products.filter(p=>p.threat==='low'||p.threat==='clean').length;
+  if (h) strip.innerHTML += `<span class="tally-badge tb-high">☠ ${h} TOXIC</span>`;
+  if (m) strip.innerHTML += `<span class="tally-badge tb-med">⚠ ${m} CAUTION</span>`;
+  if (s) strip.innerHTML += `<span class="tally-badge tb-clean">✓ ${s} OK</span>`;
+}
+
+function clearAll() {
+  products = [];
+  updateTally();
+  ovLayer.querySelectorAll('.nutrition-terminal').forEach(el=>el.remove());
+  effCtx.clearRect(0, 0, effCvs.width, effCvs.height);
+  if (state===S.FROZEN) resumeLive();
+}
+
+function showErr(msg) {
+  const t=document.getElementById('err-toast');
+  document.getElementById('et-msg').textContent=msg;
+  t.style.display='block';
+  requestAnimationFrame(()=>t.classList.add('show'));
+  clearTimeout(window._et);
+  window._et=setTimeout(hideErr,9000);
+}
+function hideErr() {
+  const t=document.getElementById('err-toast');
+  t.classList.remove('show');
+  setTimeout(()=>{ t.style.display='none'; },350);
+}
+</script>
+</body>
+</html>
