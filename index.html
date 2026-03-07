@@ -892,7 +892,7 @@ Respond with ONLY raw valid JSON — no markdown fences, no extra text:
 
 Rules:
 - position: 0.0–1.0 fractions of the image (x=left, y=top, w=width, h=height) — bounding box
-- polygon: 8–14 points tracing the actual visible silhouette/outline of the product as closely as possible. Each point is [x, y] as 0.0–1.0 fractions of the image. Trace the real shape — bottles should be bottle-shaped, boxes rectangular, cans cylindrical. Go clockwise. More points = better silhouette fit.
+- polygon: 6–8 points tracing the visible silhouette of the product. Each point is [x, y] as 0.0–1.0 fractions of the image. Trace the real shape clockwise. Keep point count minimal — 6 points is ideal, 8 maximum.
 - threat: high = carcinogens / endocrine disruptors / acutely toxic; med = concerning / irritants; low = minor concerns; clean = no known concerns
 - flags: use exact substance names relevant to the product type:
   FOOD/DRINK: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, Propyl Gallate, MSG, Titanium Dioxide, Acesulfame-K, Sucralose
@@ -901,6 +901,22 @@ Rules:
   GENERAL: PFAS, Bisphenol A (BPA), Styrene, Benzene, Toluene
 - If no products are visible return: {"products":[]}
 - Trace polygon silhouettes as accurately as possible — this is the most important part`;
+
+// Attempt to recover truncated JSON by closing open structures
+function repairJSON(txt) {
+  // Already valid — return as-is
+  try { JSON.parse(txt); return txt; } catch(e) {}
+
+  // Count open braces/brackets and close them
+  let out = txt;
+  // Remove trailing comma if present before truncation
+  out = out.replace(/,\s*$/, '');
+  const opens = (out.match(/\{/g)||[]).length - (out.match(/\}/g)||[]).length;
+  const arrOpens = (out.match(/\[/g)||[]).length - (out.match(/\]/g)||[]).length;
+  for (let i = 0; i < arrOpens; i++) out += ']';
+  for (let i = 0; i < opens; i++) out += '}';
+  return out;
+}
 
 async function callGemini(b64) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -914,7 +930,7 @@ async function callGemini(b64) {
         { text:'Identify all visible grocery/food products. Return JSON only.' }
       ]
     }],
-    generationConfig:{ temperature:0.1, maxOutputTokens:1400 }
+    generationConfig:{ temperature:0.1, maxOutputTokens:8000 }
   };
 
   let res;
@@ -950,10 +966,12 @@ async function callGemini(b64) {
 
   if (!txt) throw new Error('Gemini returned empty text. Try again.');
 
+  // If response was truncated, attempt to close the JSON gracefully
+  txt = repairJSON(txt);
+
   try {
     return JSON.parse(txt).products || [];
   } catch(e) {
-    // Show first 120 chars of raw response to help debug
     throw new Error(`JSON parse failed. Raw: ${txt.slice(0,120)}`);
   }
 }
@@ -963,7 +981,7 @@ async function callClaude(b64) {
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
     body:JSON.stringify({
-      model:'claude-sonnet-4-20250514', max_tokens:1400, system:SYS,
+      model:'claude-sonnet-4-20250514', max_tokens:8000, system:SYS,
       messages:[{role:'user',content:[
         {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
         {type:'text',text:'Identify all grocery products. Return JSON only.'}
@@ -978,7 +996,8 @@ async function callClaude(b64) {
   }
   const data=await res.json();
   let txt=data.content.map(b=>b.text||'').join('').trim();
-  txt=txt.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  txt = txt.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  txt = repairJSON(txt);
   try { return JSON.parse(txt).products||[]; }
   catch(e){ throw new Error('Unexpected AI response format. Try again.'); }
 }
