@@ -809,7 +809,7 @@ Rules:
 - Estimate bounding boxes as accurately as possible from the image`;
 
 async function callGemini(b64) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   const body = {
     // System instruction is separate from contents in Gemini API
     system_instruction: { parts:[{ text: SYS }] },
@@ -839,7 +839,7 @@ async function callGemini(b64) {
 
   if (!res.ok) {
     const m = data?.error?.message || `Gemini HTTP ${res.status}`;
-    if (res.status===429) throw new Error('Rate limit reached. Wait 30s.');
+    if (res.status===429) throw new Error('Rate limit — wait 60s and try again. Free tier allows ~2 scans/min.');
     if (res.status===400) throw new Error(`Bad request: ${m}`);
     if (res.status===403) throw new Error(`Key refused (403): ${m}`);
     throw new Error(`Gemini ${res.status}: ${m}`);
