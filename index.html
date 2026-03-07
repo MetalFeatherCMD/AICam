@@ -490,73 +490,130 @@ function startRenderLoop() {
 
 // ═══════════════════════════
 //  TOXIC REGION RENDERING
-//  Coordinates in products are 0-1 fractions of the VIDEO frame.
-//  The effect canvas IS the video rect, so we just multiply by canvas size.
+//  Uses polygon points from AI to trace product silhouette.
+//  Falls back to bounding box rectangle if no polygon provided.
 // ═══════════════════════════
 function drawToxicRegions(cw, ch) {
   products.forEach(p => {
-    const pos = p.position;
-    if (!pos) return;
+    const col = {
+      high:  { stroke:'#e8291a', glow:'rgba(232,41,26,0.55)',  fill:'rgba(232,41,26,0.08)'  },
+      med:   { stroke:'#d4821a', glow:'rgba(212,130,26,0.45)', fill:'rgba(212,130,26,0.06)' },
+      low:   { stroke:'#00cc50', glow:'rgba(0,204,80,0.3)',    fill:'rgba(0,204,80,0.04)'   },
+      clean: { stroke:'rgba(245,240,232,0.35)', glow:'rgba(245,240,232,0.15)', fill:'rgba(245,240,232,0.02)' },
+    }[p.threat] || { stroke:'#888', glow:'rgba(128,128,128,0.3)', fill:'transparent' };
 
-    // Map 0-1 coords to canvas pixels
-    const px = Math.round(pos.x * cw);
-    const py = Math.round(pos.y * ch);
-    const pw = Math.round(pos.w * cw);
-    const ph = Math.round(pos.h * ch);
-    if (pw < 4 || ph < 4) return;
+    // Build the path — polygon if available, else bounding box
+    const pts = buildPath(p, cw, ch);
+    if (!pts || pts.length < 3) return;
 
-    const cx = Math.max(0, px);
-    const cy = Math.max(0, py);
-    const cw2 = Math.min(pw, cw - cx);
-    const ch2 = Math.min(ph, ch - cy);
-    if (cw2 < 2 || ch2 < 2) return;
-
+    // ── 1. Clip to polygon and desaturate the region ──
     if (p.threat === 'high' || p.threat === 'med') {
-      // Desaturate region to greyscale
-      try {
-        const id = effCtx.getImageData(cx, cy, cw2, ch2);
-        const d  = id.data;
-        const darken = p.threat==='high' ? 0.68 : 0.82;
-        for (let i = 0; i < d.length; i += 4) {
-          const g = (0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]) * darken;
-          d[i] = d[i+1] = d[i+2] = g;
-        }
-        effCtx.putImageData(id, cx, cy);
-      } catch(e) { /* tainted canvas guard */ }
+      effCtx.save();
+      effCtx.beginPath();
+      effCtx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) effCtx.lineTo(pts[i][0], pts[i][1]);
+      effCtx.closePath();
+      effCtx.clip();
 
-      // Coloured outline
-      const lw = p.threat==='high' ? 3 : 2;
-      effCtx.strokeStyle = p.threat==='high' ? '#e8291a' : '#d4821a';
-      effCtx.lineWidth   = lw;
-      effCtx.strokeRect(px + lw/2, py + lw/2, pw - lw, ph - lw);
+      // Get bounding box of the polygon for getImageData
+      const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+      const minX = Math.max(0, Math.floor(Math.min(...xs)));
+      const minY = Math.max(0, Math.floor(Math.min(...ys)));
+      const maxX = Math.min(cw, Math.ceil(Math.max(...xs)));
+      const maxY = Math.min(ch, Math.ceil(Math.max(...ys)));
+      const rw = maxX - minX, rh = maxY - minY;
 
-      // Label strip
-      const lh  = Math.max(16, Math.min(22, ph * 0.14));
-      const fs  = Math.max(8, Math.min(12, pw / 9));
-      effCtx.fillStyle = p.threat==='high' ? 'rgba(232,41,26,0.9)' : 'rgba(212,130,26,0.88)';
-      effCtx.fillRect(px, py, pw, lh);
-      effCtx.fillStyle    = 'white';
+      if (rw > 1 && rh > 1) {
+        try {
+          const id = effCtx.getImageData(minX, minY, rw, rh);
+          const d  = id.data;
+          const darken = p.threat === 'high' ? 0.55 : 0.72;
+          for (let i = 0; i < d.length; i += 4) {
+            const g = (0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]) * darken;
+            d[i] = d[i+1] = d[i+2] = g;
+          }
+          effCtx.putImageData(id, minX, minY);
+        } catch(e) { /* tainted canvas */ }
+      }
+      effCtx.restore();
+    }
+
+    // ── 2. Draw outer glow ──
+    effCtx.save();
+    effCtx.beginPath();
+    effCtx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) effCtx.lineTo(pts[i][0], pts[i][1]);
+    effCtx.closePath();
+    effCtx.strokeStyle = col.glow;
+    effCtx.lineWidth   = 8;
+    effCtx.lineJoin    = 'round';
+    effCtx.lineCap     = 'round';
+    effCtx.shadowColor = col.glow;
+    effCtx.shadowBlur  = 14;
+    effCtx.stroke();
+    effCtx.restore();
+
+    // ── 3. Draw crisp inner stroke ──
+    effCtx.save();
+    effCtx.beginPath();
+    effCtx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) effCtx.lineTo(pts[i][0], pts[i][1]);
+    effCtx.closePath();
+    effCtx.strokeStyle = col.stroke;
+    effCtx.lineWidth   = p.threat === 'high' ? 2.5 : 1.8;
+    effCtx.lineJoin    = 'round';
+    effCtx.lineCap     = 'round';
+    effCtx.shadowBlur  = 0;
+    effCtx.stroke();
+    effCtx.restore();
+
+    // ── 4. Floating threat label near top of polygon ──
+    if (p.threat !== 'clean') {
+      const xs = pts.map(q=>q[0]), ys = pts.map(q=>q[1]);
+      const topX = pts.reduce((a,b) => b[1] < a[1] ? b : a)[0];
+      const topY = Math.min(...ys);
+      const ico  = { high:'☠', med:'⚠', low:'○' }[p.threat] || '';
+      const lbl  = ico + ' ' + (p.brand || p.name).toUpperCase().slice(0, 16);
+      const fs   = Math.max(9, Math.min(13, (Math.max(...xs)-Math.min(...xs)) / 8));
+
+      effCtx.save();
       effCtx.font         = `600 ${fs}px "DM Mono",monospace`;
-      effCtx.textAlign    = 'left';
-      effCtx.textBaseline = 'middle';
-      const ico = p.threat==='high' ? '☠ ' : '⚠ ';
-      const lbl = (p.brand || p.name).toUpperCase().slice(0, Math.floor(pw / fs * 0.85));
-      effCtx.fillText(ico + lbl, px + 4, py + lh / 2);
+      effCtx.textAlign    = 'center';
+      effCtx.textBaseline = 'bottom';
+      const tw = effCtx.measureText(lbl).width;
+      const pad = 4;
+      const lx  = Math.max(tw/2 + pad, Math.min(cw - tw/2 - pad, topX));
+      const ly  = Math.max(fs + pad*2, topY - 5);
 
-    } else {
-      // Clean / low — green tick strip only
-      const lh = Math.max(14, Math.min(18, ph * 0.12));
-      const fs = Math.max(7, Math.min(10, pw / 9));
-      effCtx.fillStyle    = 'rgba(0,160,60,0.72)';
-      effCtx.fillRect(px, py, pw, lh);
-      effCtx.fillStyle    = 'white';
-      effCtx.font         = `600 ${fs}px "DM Mono",monospace`;
-      effCtx.textAlign    = 'left';
-      effCtx.textBaseline = 'middle';
-      const lbl = '✓ ' + (p.brand || p.name).toUpperCase().slice(0, Math.floor(pw / fs * 0.85));
-      effCtx.fillText(lbl, px + 4, py + lh / 2);
+      // Pill background
+      effCtx.beginPath();
+      effCtx.roundRect(lx - tw/2 - pad, ly - fs - pad, tw + pad*2, fs + pad*2, 3);
+      effCtx.fillStyle = p.threat === 'high' ? 'rgba(232,41,26,0.88)' : 'rgba(212,130,26,0.88)';
+      effCtx.fill();
+
+      effCtx.fillStyle = 'white';
+      effCtx.fillText(lbl, lx, ly);
+      effCtx.restore();
     }
   });
+}
+
+// Build polygon points in canvas px from product data
+function buildPath(p, cw, ch) {
+  // Prefer polygon if Gemini returned one with enough points
+  if (p.polygon && p.polygon.length >= 4) {
+    return p.polygon.map(([x, y]) => [x * cw, y * ch]);
+  }
+  // Fallback: generate polygon from bounding box
+  if (!p.position) return null;
+  const { x, y, w, h } = p.position;
+  const px = x*cw, py = y*ch, pw = w*cw, ph = h*ch;
+  return [
+    [px,      py],
+    [px+pw,   py],
+    [px+pw,   py+ph],
+    [px,      py+ph],
+  ];
 }
 
 // ═══════════════════════════
@@ -722,6 +779,7 @@ function renderTerminals() {
 }
 
 const REASONS = {
+  // Food
   'Red 40':              'Petroleum dye · ADHD links in children',
   'Yellow 5':            'Petroleum dye · allergic reactions',
   'Yellow 6':            'Petroleum dye · adrenal tumors in animals',
@@ -741,6 +799,36 @@ const REASONS = {
   'Titanium Dioxide':    'Banned EU food use · DNA damage in studies',
   'Acesulfame-K':        'Possible carcinogen · limited long-term data',
   'Sucralose':           'Alters gut microbiome · chlorinated compound',
+  // Cleaning / Laundry
+  'Sodium Lauryl Sulfate':        'Skin irritant · disrupts cell membranes',
+  'Sodium Laureth Sulfate':       'Often contaminated with 1,4-Dioxane (carcinogen)',
+  '1,4-Dioxane':                  'Probable carcinogen · EPA hazardous substance',
+  'Optical Brighteners':          'Skin sensitizer · toxic to aquatic life',
+  'Quaternary Ammonium Compounds':'Respiratory irritant · asthma trigger',
+  'Chlorine Bleach':              'Respiratory & skin irritant · forms toxic byproducts',
+  'Ammonia':                      'Respiratory irritant · reacts with bleach to form toxic gas',
+  'Formaldehyde Releasers':       'Formaldehyde is a known carcinogen (IARC Group 1)',
+  'Triclosan':                    'Endocrine disruptor · banned in some EU products',
+  'Nonylphenol Ethoxylates':      'Hormone disruptor · banned in EU',
+  'Artificial Fragrance':         'Up to 3,000 undisclosed chemicals · phthalate carrier',
+  'Phthalates':                   'Endocrine disruptors · reproductive toxicity',
+  'Phosphates':                   'Aquatic ecosystem damage · algal blooms',
+  // Personal care
+  'Parabens':            'Estrogen mimics · linked to breast cancer',
+  'Formaldehyde':        'IARC Group 1 carcinogen · respiratory hazard',
+  'Synthetic Fragrance': 'Undisclosed chemical mixture · common sensitizer',
+  'PEG Compounds':       'Often contaminated with ethylene oxide (carcinogen)',
+  'Oxybenzone':          'Endocrine disruptor · coral reef damage',
+  'Retinyl Palmitate':   'May form carcinogenic compounds in UV light',
+  'Hydroquinone':        'Possible carcinogen · banned in EU cosmetics',
+  'Coal Tar Dyes':       'Known carcinogens · banned in several countries',
+  'Lead Acetate':        'Neurotoxin · banned in EU & Canada',
+  // General
+  'PFAS':                '"Forever chemicals" · linked to cancer & immune damage',
+  'Bisphenol A (BPA)':   'Endocrine disruptor · leaches from packaging',
+  'Styrene':             'Possible carcinogen · nervous system effects',
+  'Benzene':             'IARC Group 1 carcinogen · bone marrow damage',
+  'Toluene':             'Neurotoxin · reproductive hazard',
 };
 
 // ═══════════════════════════
@@ -794,19 +882,25 @@ function clearAutoTimer() { clearInterval(autoTimer); autoTimer=null; }
 // ═══════════════════════════
 //  AI CALLS
 // ═══════════════════════════
-const SYS = `You are a food-safety AI embedded in a grocery scanner app.
-Analyse this image. Identify every visible food or drink product.
-For each product assess ingredient toxicity.
+const SYS = `You are a toxicity-analysis AI embedded in a grocery store scanner app.
+Analyse this image. Identify every visible consumer product — including food, drinks, snacks, condiments, cleaning products, laundry detergents, dish soap, household chemicals, personal care products, toiletries, pet food, baby products, and any other packaged goods found in a grocery store.
+
+For each product assess ingredient and chemical toxicity based on known harmful substances.
 
 Respond with ONLY raw valid JSON — no markdown fences, no extra text:
-{"products":[{"name":"...","brand":"...","threat":"high|med|low|clean","flags":["Additive"],"verdict":"One sentence.","position":{"x":0.0,"y":0.0,"w":0.0,"h":0.0}}]}
+{"products":[{"name":"...","brand":"...","threat":"high|med|low|clean","flags":["Substance"],"verdict":"One sentence.","position":{"x":0.0,"y":0.0,"w":0.0,"h":0.0},"polygon":[[0.0,0.0],[0.0,0.0]]}]}
 
 Rules:
-- position: 0.0–1.0 fractions of the image (x=left edge, y=top edge, w=width, h=height of the bounding box around the product)
-- threat: high = EU-banned / carcinogens / petroleum dyes; med = concerning; low = minor; clean = none
-- flags: use exact names from: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, Propyl Gallate, MSG, Titanium Dioxide, Acesulfame-K, Sucralose
-- If no food products are visible return: {"products":[]}
-- Estimate bounding boxes as accurately as possible from the image`;
+- position: 0.0–1.0 fractions of the image (x=left, y=top, w=width, h=height) — bounding box
+- polygon: 8–14 points tracing the actual visible silhouette/outline of the product as closely as possible. Each point is [x, y] as 0.0–1.0 fractions of the image. Trace the real shape — bottles should be bottle-shaped, boxes rectangular, cans cylindrical. Go clockwise. More points = better silhouette fit.
+- threat: high = carcinogens / endocrine disruptors / acutely toxic; med = concerning / irritants; low = minor concerns; clean = no known concerns
+- flags: use exact substance names relevant to the product type:
+  FOOD/DRINK: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, Propyl Gallate, MSG, Titanium Dioxide, Acesulfame-K, Sucralose
+  CLEANING/LAUNDRY: Sodium Lauryl Sulfate, Sodium Laureth Sulfate, 1,4-Dioxane, Optical Brighteners, Quaternary Ammonium Compounds, Chlorine Bleach, Ammonia, Formaldehyde Releasers, Triclosan, Nonylphenol Ethoxylates, Artificial Fragrance, Phthalates, Phosphates
+  PERSONAL CARE: Parabens, Phthalates, Formaldehyde, Triclosan, Synthetic Fragrance, PEG Compounds, Sodium Lauryl Sulfate, Oxybenzone, Retinyl Palmitate, Hydroquinone, Coal Tar Dyes, Lead Acetate
+  GENERAL: PFAS, Bisphenol A (BPA), Styrene, Benzene, Toluene
+- If no products are visible return: {"products":[]}
+- Trace polygon silhouettes as accurately as possible — this is the most important part`;
 
 async function callGemini(b64) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
