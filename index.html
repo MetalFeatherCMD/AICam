@@ -255,6 +255,120 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 .etitle { font-family:'Bebas Neue',sans-serif; font-size:0.68rem; letter-spacing:3px; color:var(--red); margin-bottom:3px; }
 .emsg   { font-size:0.48rem; letter-spacing:1px; line-height:1.6; color:rgba(245,240,232,0.4); word-break:break-word; }
 .ekey   { margin-top:6px; font-size:0.42rem; letter-spacing:2px; color:rgba(245,240,232,0.22); cursor:pointer; text-decoration:underline; background:none; border:none; font-family:'DM Mono',monospace; }
+
+/* ── COOLDOWN OVERLAY ── */
+#cooldown {
+  position:absolute; inset:0; z-index:60; display:none;
+  flex-direction:column; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.82); backdrop-filter:blur(4px);
+}
+#cooldown.show { display:flex; }
+#cd-ring {
+  width:90px; height:90px; position:relative; margin-bottom:14px;
+}
+#cd-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+#cd-track { fill:none; stroke:rgba(232,41,26,0.15); stroke-width:5; }
+#cd-arc   { fill:none; stroke:var(--red); stroke-width:5; stroke-linecap:round;
+            stroke-dasharray:245; stroke-dashoffset:0; transition:stroke-dashoffset 1s linear; }
+#cd-num {
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-family:'Bebas Neue',sans-serif; font-size:2rem; color:var(--red); letter-spacing:2px;
+}
+#cd-label { font-size:0.44rem; letter-spacing:4px; color:rgba(245,240,232,0.3); text-transform:uppercase; }
+
+/* ── VHS THEME ── */
+body.vhs { background:#0a0600; }
+body.vhs #scanner { background:#0a0600; }
+
+/* Phosphor green tint over everything */
+body.vhs::after {
+  content:''; position:fixed; inset:0; z-index:900; pointer-events:none;
+  background:rgba(0,40,0,0.18);
+  mix-blend-mode:multiply;
+}
+
+/* Scanlines */
+body.vhs #scanlines {
+  display:block !important;
+}
+#scanlines {
+  display:none;
+  position:absolute; inset:0; z-index:30; pointer-events:none;
+  background:repeating-linear-gradient(
+    0deg,
+    transparent 0px, transparent 3px,
+    rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 4px
+  );
+  animation:scanroll 8s linear infinite;
+}
+@keyframes scanroll {
+  0%   { background-position:0 0; }
+  100% { background-position:0 400px; }
+}
+
+/* Horizontal tracking glitch band */
+body.vhs #vhs-glitch { display:block !important; }
+#vhs-glitch {
+  display:none;
+  position:absolute; left:0; right:0; z-index:31; pointer-events:none;
+  height:3px; background:rgba(0,255,60,0.12);
+  animation:glitchband 6s ease-in-out infinite;
+}
+@keyframes glitchband {
+  0%,100%{ top:-10px; opacity:0; }
+  10%    { top:20%; opacity:0.8; }
+  10.5%  { top:20%; opacity:0; }
+  40%    { top:60%; opacity:0.6; }
+  40.3%  { top:61%; opacity:0; }
+  70%    { top:40%; opacity:0.5; }
+  70.2%  { top:40%; opacity:0; }
+}
+
+/* Vignette */
+body.vhs #vhs-vignette { display:block !important; }
+#vhs-vignette {
+  display:none;
+  position:absolute; inset:0; z-index:29; pointer-events:none;
+  background:radial-gradient(ellipse at center,
+    transparent 55%,
+    rgba(0,0,0,0.65) 100%
+  );
+}
+
+/* VHS noise grain */
+body.vhs #vhs-noise { display:none; /* toggled by JS animation */ }
+
+/* Timecode in VHS mode */
+body.vhs #vhs-tc { display:block !important; }
+#vhs-tc {
+  display:none;
+  position:absolute; bottom:108px; left:12px; z-index:35; pointer-events:none;
+  font-family:'VT323',monospace; font-size:0.72rem; color:rgba(255,255,255,0.55);
+  letter-spacing:2px; text-shadow:0 0 6px rgba(0,255,60,0.4);
+}
+
+/* Green tint on video/photo in VHS mode */
+body.vhs #video, body.vhs #photo {
+  filter: saturate(0.3) sepia(0.4) hue-rotate(60deg) brightness(0.85) contrast(1.1);
+}
+
+/* HUD text goes green-ish in VHS mode */
+body.vhs .tlogo, body.vhs #pill, body.vhs .trec,
+body.vhs .shlbl, body.vhs #tally { filter:hue-rotate(110deg) saturate(0.7); }
+
+/* Theme toggle button */
+#vhs-btn {
+  width:42px; height:42px; border-radius:50%;
+  border:1px solid rgba(245,240,232,0.12); background:rgba(0,0,0,0.5);
+  backdrop-filter:blur(8px); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; cursor:pointer;
+  font-size:0.75rem; gap:1px; -webkit-appearance:none; transition:transform 0.12s;
+  color:var(--white);
+}
+#vhs-btn:active { transform:scale(0.88); }
+#vhs-btn span:last-child { font-size:0.28rem; letter-spacing:1px; color:rgba(245,240,232,0.25); text-transform:uppercase; }
+body.vhs #vhs-btn { border-color:rgba(0,255,60,0.3); color:#0f0; box-shadow:0 0 8px rgba(0,255,60,0.2); }
+body.vhs #vhs-btn span:last-child { color:rgba(0,255,60,0.5); }
 </style>
 </head>
 <body>
@@ -294,6 +408,24 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
   <canvas id="cap"></canvas>
   <div id="ov"></div>
 
+  <!-- VHS overlays -->
+  <div id="scanlines"></div>
+  <div id="vhs-glitch"></div>
+  <div id="vhs-vignette"></div>
+  <div id="vhs-tc">SP · 00:00:00:00</div>
+
+  <!-- Cooldown overlay -->
+  <div id="cooldown">
+    <div id="cd-ring">
+      <svg viewBox="0 0 90 90">
+        <circle class="" id="cd-track" cx="45" cy="45" r="39"/>
+        <circle id="cd-arc" cx="45" cy="45" r="39"/>
+      </svg>
+      <div id="cd-num">60</div>
+    </div>
+    <div id="cd-label">Rate limited · cooling down</div>
+  </div>
+
   <div id="top">
     <div class="tlogo">THEY<em>LIVE</em></div>
     <div class="trec live" id="rec"><div class="rdot live" id="rdot"></div><span id="rectext">LIVE</span></div>
@@ -328,7 +460,7 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
       <button id="shutter" onclick="onShutter()"><div class="si"></div></button>
       <div class="shlbl" id="shlbl">SNAP &amp; SCAN</div>
     </div>
-    <button class="sb" onclick="clearScan()"><span>✕</span><span>Clear</span></button>
+    <button id="vhs-btn" onclick="toggleVHS()"><span>📼</span><span>VHS</span></button>
   </div>
 </div>
 
@@ -345,6 +477,67 @@ let stream = null;
 let facing = 'environment';
 let products = [];
 let history  = [];   // [{dataURL, products, timestamp}]
+let vhsMode  = false;
+let cdTimer  = null;
+
+// ── VHS THEME ──
+function toggleVHS() {
+  vhsMode = !vhsMode;
+  document.body.classList.toggle('vhs', vhsMode);
+  if (vhsMode) startVHSTimecode();
+  else stopVHSTimecode();
+}
+
+let tcInterval = null;
+let tcStart    = null;
+function startVHSTimecode() {
+  tcStart = Date.now();
+  tcInterval = setInterval(() => {
+    const el = document.getElementById('vhs-tc');
+    if (!el) return;
+    const s  = Math.floor((Date.now() - tcStart) / 1000);
+    const hh = String(Math.floor(s/3600)).padStart(2,'0');
+    const mm = String(Math.floor((s%3600)/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    const ff = String(Math.floor((Date.now()%1000)/33)).padStart(2,'0');
+    el.textContent = `SP · ${hh}:${mm}:${ss}:${ff}`;
+  }, 50);
+}
+function stopVHSTimecode() {
+  clearInterval(tcInterval);
+  document.getElementById('vhs-tc').textContent = 'SP · 00:00:00:00';
+}
+
+// ── COOLDOWN TIMER ──
+function startCooldown(seconds) {
+  const overlay = document.getElementById('cooldown');
+  const numEl   = document.getElementById('cd-num');
+  const arc     = document.getElementById('cd-arc');
+  const circumference = 245;
+
+  overlay.classList.add('show');
+  let remaining = seconds;
+
+  function tick() {
+    numEl.textContent = remaining;
+    arc.style.strokeDashoffset = circumference * (1 - remaining / seconds);
+    if (remaining <= 0) {
+      overlay.classList.remove('show');
+      clearInterval(cdTimer);
+      cdTimer = null;
+      setPill('', 'TAP SHUTTER TO SCAN');
+      return;
+    }
+    remaining--;
+  }
+  tick();
+  cdTimer = setInterval(tick, 1000);
+}
+
+function clearCooldown() {
+  if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
+  document.getElementById('cooldown').classList.remove('show');
+}
 
 const video   = document.getElementById('video');
 const photo   = document.getElementById('photo');  // canvas shown when frozen
@@ -403,6 +596,7 @@ async function checkKey(k) {
 
 function goBack() {
   hideErr();
+  clearCooldown();
   document.getElementById('api-screen').style.display = 'flex';
   document.getElementById('scanner').style.display    = 'none';
   enterLive();
@@ -461,7 +655,8 @@ function enterFrozen() {
 
 // ── SHUTTER ──
 function onShutter() {
-  if (appState === 'analyzing') return;   // ignore while working
+  if (cdTimer) return;                              // blocked during cooldown
+  if (appState === 'analyzing') return;
   if (appState === 'frozen') { enterLive(); return; }
   doShoot();
 }
@@ -515,8 +710,15 @@ async function doShoot() {
       ? `${products.length} PRODUCT${products.length>1?'S':''} · TAP SHUTTER TO RESUME`
       : 'NOTHING DETECTED · TAP SHUTTER TO RESUME');
   } catch(e) {
-    showErr(e.message || 'Scan failed.');
-    enterLive();
+    const msg = e.message || 'Scan failed.';
+    if (msg.includes('Rate limit') || msg.includes('429')) {
+      enterLive();
+      startCooldown(60);
+      setPill('analyzing', 'RATE LIMITED · COOLING DOWN…');
+    } else {
+      showErr(msg);
+      enterLive();
+    }
   }
 }
 
@@ -717,17 +919,31 @@ function repairJSON(txt) {
   return out;
 }
 
-const SYS = `You are a toxicity-analysis AI in a grocery store scanner app.
-Analyse the image. Identify every visible consumer product (food, drinks, cleaning products, laundry detergents, dish soap, personal care, household chemicals, etc).
-For each product assess toxicity of its known ingredients/chemicals.
+const SYS = `You are a toxicity-analysis AI that scans consumer products for harmful ingredients.
+Analyse the image. Identify EVERY visible consumer product across ALL categories:
+- Food & drink: packaged foods, snacks, beverages, condiments, supplements
+- Household cleaning: detergents, bleach, sprays, dish soap, fabric softener
+- Personal care & beauty: shampoo, conditioner, body wash, soap, deodorant, toothpaste, mouthwash, hand sanitiser, lotion, moisturiser, sunscreen, lip balm
+- Makeup & cosmetics: foundation, concealer, lipstick, lip gloss, mascara, eyeliner, eyeshadow, blush, bronzer, setting spray, nail polish, nail polish remover
+- Hair care: hair dye, hair spray, dry shampoo, hair serum, styling products
+- Skincare: face wash, toner, serum, eye cream, exfoliants, face masks, acne treatments
+- Baby & child products: baby wash, baby lotion, baby powder, nappy cream
+- Pet products: pet food, pet shampoo, flea treatments
+- Pharmaceuticals / OTC: vitamins, pain relievers, antacids (flag concerning inactive ingredients)
+
+For each product assess toxicity of its known ingredients based on brand/product knowledge.
 
 Return ONLY raw valid JSON, no markdown fences:
 {"products":[{"name":"...","brand":"...","threat":"high|med|low|clean","flags":["Substance"],"verdict":"One sentence.","position":{"x":0.0,"y":0.0,"w":0.0,"h":0.0}}]}
 
 Rules:
-- position: 0-1 fractions of the image (x=left edge, y=top edge, w=width, h=height of bounding box around the product)
-- threat: high=carcinogens/endocrine disruptors, med=concerning, low=minor concerns, clean=none
-- flags: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, MSG, Titanium Dioxide, Acesulfame-K, Sucralose, Sodium Lauryl Sulfate, Sodium Laureth Sulfate, 1,4-Dioxane, Quaternary Ammonium Compounds, Chlorine Bleach, Formaldehyde Releasers, Triclosan, Artificial Fragrance, Phthalates, Parabens, Oxybenzone, PFAS, Bisphenol A (BPA)
+- position: 0-1 fractions of the image (x=left edge, y=top edge, w=width, h=height of bounding box)
+- threat: high=carcinogens/endocrine disruptors/reproductive toxins, med=concerning/irritants/sensitisers, low=minor concerns, clean=none known
+- flags — use ONLY names from this list:
+  FOOD: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, MSG, Titanium Dioxide, Acesulfame-K, Sucralose, Propyl Gallate
+  CLEANING: Sodium Lauryl Sulfate, Sodium Laureth Sulfate, 1,4-Dioxane, Quaternary Ammonium Compounds, Chlorine Bleach, Ammonia, Formaldehyde Releasers, Triclosan, Optical Brighteners, Nonylphenol Ethoxylates, Phosphates
+  PERSONAL CARE & BEAUTY: Parabens, Phthalates, Artificial Fragrance, Oxybenzone, Avobenzone, Octinoxate, Homosalate, Octisalate, Retinyl Palmitate, Hydroquinone, Coal Tar Dyes, Lead Acetate, Formaldehyde, PEG Compounds, Propylene Glycol, Diethanolamine (DEA), Triethanolamine (TEA), Butylated Hydroxytoluene, Talc, Polyacrylamide, Toluene, Dibutyl Phthalate (DBP), Camphor, Ethyl Tosylamide, Triphenyl Phosphate (TPHP), BHA, Resorcinol, p-Phenylenediamine (PPD), Ammonium Persulfate, Styrene
+  GENERAL: PFAS, Bisphenol A (BPA), Benzene, Heavy Metals
 - No products visible: {"products":[]}`;
 
 async function callGemini(b64) {
@@ -859,14 +1075,46 @@ const WHY = {
   '1,4-Dioxane':'Probable carcinogen · EPA hazardous substance',
   'Quaternary Ammonium Compounds':'Respiratory irritant · asthma trigger',
   'Chlorine Bleach':'Respiratory irritant · forms toxic byproducts',
+  'Ammonia':'Irritant · reacts with bleach to form toxic gas',
   'Formaldehyde Releasers':'Formaldehyde is IARC Group 1 carcinogen',
+  'Optical Brighteners':'Skin sensitiser · toxic to aquatic life',
+  'Nonylphenol Ethoxylates':'Hormone disruptor · banned in EU',
+  'Phosphates':'Aquatic ecosystem damage · algal blooms',
   'Triclosan':'Endocrine disruptor · banned in some EU products',
-  'Artificial Fragrance':'Up to 3,000 undisclosed chemicals',
+  'Artificial Fragrance':'Up to 3,000 undisclosed chemicals · common sensitiser',
   'Phthalates':'Endocrine disruptors · reproductive toxicity',
   'Parabens':'Estrogen mimics · linked to breast cancer',
-  'Oxybenzone':'Endocrine disruptor · coral reef damage',
+  'Oxybenzone':'Endocrine disruptor · absorbed into bloodstream · coral reef damage',
+  'Avobenzone':'Degrades in sunlight · potential hormone disruption',
+  'Octinoxate':'Endocrine disruptor · absorbed through skin · banned in some reefs',
+  'Homosalate':'Disrupts estrogen, androgen & progesterone · penetration enhancer',
+  'Octisalate':'Skin sensitiser · enhances absorption of other chemicals',
+  'Retinyl Palmitate':'May form carcinogens in UV light on skin',
+  'Hydroquinone':'Possible carcinogen · banned EU cosmetics · cytotoxic',
+  'Coal Tar Dyes':'Known carcinogens · banned in several countries',
+  'Lead Acetate':'Neurotoxin · banned EU & Canada hair products',
+  'Formaldehyde':'IARC Group 1 carcinogen · respiratory & skin hazard',
+  'PEG Compounds':'Often contaminated with ethylene oxide (carcinogen)',
+  'Propylene Glycol':'Skin irritant · penetration enhancer · linked to dermatitis',
+  'Diethanolamine (DEA)':'Reacts to form carcinogenic nitrosamines · banned EU',
+  'Triethanolamine (TEA)':'Forms nitrosamines · skin & eye irritant',
+  'Butylated Hydroxytoluene':'Endocrine disruptor · possible carcinogen',
+  'Talc':'May contain asbestos fibres · IARC Group 2B',
+  'Polyacrylamide':'Contains acrylamide monomer · probable carcinogen',
+  'Toluene':'Neurotoxin · reproductive hazard · banned EU nail products',
+  'Dibutyl Phthalate (DBP)':'Endocrine disruptor · reproductive toxin · banned EU',
+  'Camphor':'Toxic in large amounts · respiratory irritant',
+  'Ethyl Tosylamide':'Antibiotic resistance concerns · banned EU',
+  'Triphenyl Phosphate (TPHP)':'Endocrine disruptor · found in nail polish wearers\' urine',
+  'Resorcinol':'Endocrine disruptor · skin sensitiser · toxic to aquatic life',
+  'p-Phenylenediamine (PPD)':'Strong allergen · linked to bladder cancer in hairdressers',
+  'Ammonium Persulfate':'Occupational asthma trigger · skin & lung sensitiser',
+  'Styrene':'Possible carcinogen · nervous system effects',
   'PFAS':'"Forever chemicals" · cancer & immune damage',
   'Bisphenol A (BPA)':'Endocrine disruptor · leaches from packaging',
+  'Benzene':'IARC Group 1 carcinogen · bone marrow damage',
+  'Heavy Metals':'Arsenic/lead/mercury/cadmium · neurotoxic & carcinogenic',
+  'Propyl Gallate':'Possible endocrine disruptor · allergic reactions',
 };
 </script>
 </body>
