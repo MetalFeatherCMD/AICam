@@ -394,7 +394,7 @@ body.vhs #vhs-btn span:last-child { color:rgba(0,255,60,0.5); }
     </div>
     <div class="hint" id="khint">
       Free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a><br>
-      Key sent only to Google's API — never stored.
+      ⚠ Free tier rate-limits aggressively — expect 429s after 1–2 scans. For reliable scanning use <span style="color:rgba(245,240,232,0.5);cursor:pointer;text-decoration:underline" onclick="setProv('c')">Claude instead</span>.
     </div>
     <button class="go" id="gobtn" onclick="launch()">Start Scanning</button>
     <div class="aerr" id="aerr"></div>
@@ -678,7 +678,7 @@ async function doShoot() {
   const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
   cap.width = cw; cap.height = ch;
   capCtx.drawImage(video, 0, 0, cw, ch);
-  const b64 = cap.toDataURL('image/jpeg', 0.75).split(',')[1];
+  const b64 = cap.toDataURL('image/jpeg', 0.65).split(',')[1];
 
   // ── Freeze the photo canvas to match what video is showing ──
   // Size photo canvas to the video element's display size
@@ -919,31 +919,15 @@ function repairJSON(txt) {
   return out;
 }
 
-const SYS = `You are a toxicity-analysis AI that scans consumer products for harmful ingredients.
-Analyse the image. Identify EVERY visible consumer product across ALL categories:
-- Food & drink: packaged foods, snacks, beverages, condiments, supplements
-- Household cleaning: detergents, bleach, sprays, dish soap, fabric softener
-- Personal care & beauty: shampoo, conditioner, body wash, soap, deodorant, toothpaste, mouthwash, hand sanitiser, lotion, moisturiser, sunscreen, lip balm
-- Makeup & cosmetics: foundation, concealer, lipstick, lip gloss, mascara, eyeliner, eyeshadow, blush, bronzer, setting spray, nail polish, nail polish remover
-- Hair care: hair dye, hair spray, dry shampoo, hair serum, styling products
-- Skincare: face wash, toner, serum, eye cream, exfoliants, face masks, acne treatments
-- Baby & child products: baby wash, baby lotion, baby powder, nappy cream
-- Pet products: pet food, pet shampoo, flea treatments
-- Pharmaceuticals / OTC: vitamins, pain relievers, antacids (flag concerning inactive ingredients)
+const SYS = `You are a toxicity-analysis AI for consumer products.
+Identify every visible product in the image. Assess harmful ingredients based on brand/product knowledge.
 
-For each product assess toxicity of its known ingredients based on brand/product knowledge.
-
-Return ONLY raw valid JSON, no markdown fences:
+Return ONLY raw JSON, no markdown:
 {"products":[{"name":"...","brand":"...","threat":"high|med|low|clean","flags":["Substance"],"verdict":"One sentence.","position":{"x":0.0,"y":0.0,"w":0.0,"h":0.0}}]}
 
-Rules:
-- position: 0-1 fractions of the image (x=left edge, y=top edge, w=width, h=height of bounding box)
-- threat: high=carcinogens/endocrine disruptors/reproductive toxins, med=concerning/irritants/sensitisers, low=minor concerns, clean=none known
-- flags — use ONLY names from this list:
-  FOOD: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, MSG, Titanium Dioxide, Acesulfame-K, Sucralose, Propyl Gallate
-  CLEANING: Sodium Lauryl Sulfate, Sodium Laureth Sulfate, 1,4-Dioxane, Quaternary Ammonium Compounds, Chlorine Bleach, Ammonia, Formaldehyde Releasers, Triclosan, Optical Brighteners, Nonylphenol Ethoxylates, Phosphates
-  PERSONAL CARE & BEAUTY: Parabens, Phthalates, Artificial Fragrance, Oxybenzone, Avobenzone, Octinoxate, Homosalate, Octisalate, Retinyl Palmitate, Hydroquinone, Coal Tar Dyes, Lead Acetate, Formaldehyde, PEG Compounds, Propylene Glycol, Diethanolamine (DEA), Triethanolamine (TEA), Butylated Hydroxytoluene, Talc, Polyacrylamide, Toluene, Dibutyl Phthalate (DBP), Camphor, Ethyl Tosylamide, Triphenyl Phosphate (TPHP), BHA, Resorcinol, p-Phenylenediamine (PPD), Ammonium Persulfate, Styrene
-  GENERAL: PFAS, Bisphenol A (BPA), Benzene, Heavy Metals
+- position: 0-1 fractions (x=left, y=top, w=width, h=height)
+- threat: high=carcinogens/endocrine disruptors, med=concerning, low=minor, clean=none
+- flags: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, MSG, Titanium Dioxide, Acesulfame-K, Sucralose, Sodium Lauryl Sulfate, Sodium Laureth Sulfate, 1,4-Dioxane, Quaternary Ammonium Compounds, Chlorine Bleach, Formaldehyde Releasers, Triclosan, Artificial Fragrance, Phthalates, Parabens, Oxybenzone, Retinyl Palmitate, Hydroquinone, Coal Tar Dyes, Toluene, Dibutyl Phthalate (DBP), Triphenyl Phosphate (TPHP), Resorcinol, p-Phenylenediamine (PPD), PEG Compounds, Propylene Glycol, Diethanolamine (DEA), Talc, PFAS, Bisphenol A (BPA), Benzene, Heavy Metals
 - No products visible: {"products":[]}`;
 
 async function callGemini(b64) {
@@ -958,7 +942,7 @@ async function callGemini(b64) {
           { inline_data:{ mime_type:'image/jpeg', data:b64 } },
           { text:'Identify all products. Return JSON only.' }
         ]}],
-        generationConfig:{ temperature:0.1, maxOutputTokens:4000 }
+        generationConfig:{ temperature:0.1, maxOutputTokens:1400 }
       })
     });
   } catch(e) { throw new Error('Network error — check your connection.'); }
@@ -988,7 +972,7 @@ async function callClaude(b64) {
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body: JSON.stringify({
-        model:'claude-sonnet-4-20250514', max_tokens:4000, system:SYS,
+        model:'claude-sonnet-4-20250514', max_tokens:1400, system:SYS,
         messages:[{ role:'user', content:[
           { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:b64 } },
           { type:'text',  text:'Identify all products. Return JSON only.' }
