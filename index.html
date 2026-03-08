@@ -145,7 +145,7 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 /* ── TALLY ── */
 #tally {
   position:absolute; z-index:20;
-  bottom:105px; left:0; right:0;
+  bottom:165px; left:0; right:0;
   display:flex; gap:6px; justify-content:center; flex-wrap:wrap; padding:0 16px;
 }
 .tb { font-size:0.44rem; letter-spacing:1px; padding:2px 8px; border-radius:2px; border:1px solid; text-transform:uppercase; }
@@ -193,6 +193,55 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 }
 .sb:active { transform:scale(0.88); }
 .sb span:last-child { font-size:0.3rem; letter-spacing:1px; color:rgba(245,240,232,0.25); text-transform:uppercase; }
+
+/* ── FILMSTRIP ── */
+#filmstrip-wrap {
+  position:absolute; bottom:90px; left:0; right:0; z-index:20;
+  display:none; /* shown once first scan completes */
+}
+#filmstrip {
+  display:flex; gap:6px; overflow-x:auto; overflow-y:hidden;
+  padding:6px 12px 6px;
+  scrollbar-width:none;
+}
+#filmstrip::-webkit-scrollbar { display:none; }
+
+.film-thumb {
+  flex-shrink:0; position:relative;
+  width:60px; height:60px; border-radius:6px; overflow:hidden;
+  border:1.5px solid rgba(245,240,232,0.15);
+  cursor:pointer; transition:border-color 0.2s, transform 0.15s;
+  background:#111;
+}
+.film-thumb:active { transform:scale(0.93); }
+.film-thumb.active { border-color:var(--white); }
+.film-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.film-badge {
+  position:absolute; bottom:2px; right:2px;
+  font-size:0.36rem; letter-spacing:0.5px; padding:1px 3px;
+  border-radius:2px; font-family:'DM Mono',monospace;
+}
+.film-badge.h { background:rgba(232,41,26,0.9); color:#fff; }
+.film-badge.m { background:rgba(212,130,26,0.9); color:#fff; }
+.film-badge.s { background:rgba(0,160,48,0.85);  color:#fff; }
+
+/* ── LIGHTBOX ── */
+#lightbox {
+  position:absolute; inset:0; z-index:80; background:rgba(0,0,0,0.96);
+  display:none; flex-direction:column; align-items:center; justify-content:center;
+}
+#lightbox.open { display:flex; }
+#lb-img { max-width:100%; max-height:calc(100% - 110px); object-fit:contain; border-radius:6px; }
+#lb-bar {
+  width:100%; padding:10px 16px 20px;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
+#lb-info { font-size:0.44rem; letter-spacing:2px; color:rgba(245,240,232,0.3); text-transform:uppercase; }
+#lb-close {
+  padding:7px 18px; background:rgba(245,240,232,0.08); border:1px solid rgba(245,240,232,0.12);
+  border-radius:6px; color:var(--white); font-family:'DM Mono',monospace;
+  font-size:0.5rem; letter-spacing:2px; cursor:pointer; text-transform:uppercase;
+}
 
 /* ── ERROR TOAST ── */
 #err {
@@ -253,6 +302,20 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
   <div id="pill"><div class="pdot"></div><span id="pilltext">TAP SHUTTER TO SCAN</span></div>
   <div id="tally"></div>
 
+  <!-- Filmstrip -->
+  <div id="filmstrip-wrap">
+    <div id="filmstrip"></div>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox">
+    <img id="lb-img" src="" alt="">
+    <div id="lb-bar">
+      <div id="lb-info"></div>
+      <button id="lb-close" onclick="closeLightbox()">✕ Close</button>
+    </div>
+  </div>
+
   <div id="err">
     <div class="etitle">⚠ ERROR</div>
     <div class="emsg" id="emsg">—</div>
@@ -281,6 +344,7 @@ let apiKey = '';
 let stream = null;
 let facing = 'environment';
 let products = [];
+let history  = [];   // [{dataURL, products, timestamp}]
 
 const video   = document.getElementById('video');
 const photo   = document.getElementById('photo');  // canvas shown when frozen
@@ -445,6 +509,7 @@ async function doShoot() {
     products = results;
     updateTally();
     renderOverlays(rx, ry, rw, rh);
+    saveToHistory(products);
     enterFrozen();
     setPill('done', products.length
       ? `${products.length} PRODUCT${products.length>1?'S':''} · TAP SHUTTER TO RESUME`
@@ -461,37 +526,43 @@ function renderOverlays(rx, ry, rw, rh) {
   ov.innerHTML = '';
 
   products.forEach(p => {
+    // Only show boxes for high and med threats — clean/low clutter the view
+    if (p.threat === 'clean' || p.threat === 'low') return;
+
     const pos = p.position;
-    if (!pos) return;
+    if (!pos) { console.warn('[overlay] no position for:', p.name); return; }
+
+    // Clamp coords to valid 0-1 range
+    const x = Math.max(0, Math.min(0.98, pos.x));
+    const y = Math.max(0, Math.min(0.98, pos.y));
+    const w = Math.max(0.02, Math.min(1 - x, pos.w));
+    const h = Math.max(0.02, Math.min(1 - y, pos.h));
 
     // Map 0-1 coords → screen px
-    const bx = Math.round(rx + pos.x * rw);
-    const by = Math.round(ry + pos.y * rh);
-    const bw = Math.round(pos.w * rw);
-    const bh = Math.round(pos.h * rh);
+    const bx = Math.round(rx + x * rw);
+    const by = Math.round(ry + y * rh);
+    const bw = Math.round(w * rw);
+    const bh = Math.round(h * rh);
     if (bw < 4 || bh < 4) return;
 
     // ── Desaturate the region on the photo canvas ──
-    if (p.threat === 'high' || p.threat === 'med') {
-      try {
-        const id = photoCtx.getImageData(bx, by, bw, bh);
-        const d  = id.data;
-        const dk = p.threat==='high' ? 0.55 : 0.72;
-        for (let i = 0; i < d.length; i += 4) {
-          const g = (0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]) * dk;
-          d[i] = d[i+1] = d[i+2] = g;
-        }
-        photoCtx.putImageData(id, bx, by);
-      } catch(e) {}
-    }
+    try {
+      const id = photoCtx.getImageData(bx, by, bw, bh);
+      const d  = id.data;
+      const dk = p.threat==='high' ? 0.5 : 0.68;
+      for (let i = 0; i < d.length; i += 4) {
+        const g = (0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]) * dk;
+        d[i] = d[i+1] = d[i+2] = g;
+      }
+      photoCtx.putImageData(id, bx, by);
+    } catch(e) { console.warn('[overlay] desaturate failed:', e.message); }
 
     // ── Bounding box div ──
     const box = document.createElement('div');
     box.className = `bbox ${p.threat}`;
     box.style.cssText = `left:${bx}px;top:${by}px;width:${bw}px;height:${bh}px;`;
-
-    const ico  = {high:'☠',med:'⚠',low:'○',clean:'✓'}[p.threat] || '';
-    const name = (p.brand||p.name).toUpperCase().slice(0,20);
+    const ico  = {high:'☠', med:'⚠'}[p.threat] || '';
+    const name = (p.brand||p.name).toUpperCase().slice(0, 22);
     box.innerHTML = `<div class="bbox-label"><span>${ico}</span><span>${name}</span></div>`;
     ov.appendChild(box);
   });
@@ -541,6 +612,96 @@ function renderOverlays(rx, ry, rw, rh) {
       <div class="tv">${p.verdict}</div>`;
     ov.appendChild(el);
   });
+}
+
+// ── HISTORY ──
+function saveToHistory(prods) {
+  // Flatten photo + overlays into a single image by drawing ov elements onto a temp canvas
+  const flat = document.createElement('canvas');
+  flat.width  = photo.width;
+  flat.height = photo.height;
+  const ctx = flat.getContext('2d');
+  // Draw the photo (with desaturation already baked in)
+  ctx.drawImage(photo, 0, 0);
+  // Draw bounding boxes directly onto canvas
+  prods.forEach(p => {
+    if (p.threat === 'clean' || p.threat === 'low' || !p.position) return;
+    const pos = p.position;
+    const dw = photo.width, dh = photo.height;
+    const vaR = (video.videoWidth||1280)/(video.videoHeight||720), daR = dw/dh;
+    let rw,rh,rx,ry;
+    if(vaR>daR){rw=dw;rh=dw/vaR;rx=0;ry=(dh-rh)/2;}
+    else{rh=dh;rw=dh*vaR;rx=(dw-rw)/2;ry=0;}
+    const x = Math.max(0, Math.min(0.98, pos.x));
+    const y = Math.max(0, Math.min(0.98, pos.y));
+    const w = Math.max(0.02, Math.min(1-x, pos.w));
+    const h = Math.max(0.02, Math.min(1-y, pos.h));
+    const bx = rx + x*rw, by = ry + y*rh, bw = w*rw, bh = h*rh;
+    const col = p.threat==='high' ? '#e8291a' : '#d4821a';
+    const bg  = p.threat==='high' ? 'rgba(232,41,26,0.15)' : 'rgba(212,130,26,0.12)';
+    ctx.fillStyle = bg;
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.strokeRect(bx, by, bw, bh);
+    // Label bar
+    const ico  = p.threat==='high' ? '☠' : '⚠';
+    const name = (p.brand||p.name).toUpperCase().slice(0,18);
+    const fs   = Math.max(10, Math.min(14, bw/8));
+    ctx.font = `500 ${fs}px "DM Mono",monospace`;
+    const tw = ctx.measureText(`${ico} ${name}`).width + 10;
+    ctx.fillStyle = p.threat==='high' ? 'rgba(232,41,26,0.9)' : 'rgba(212,130,26,0.9)';
+    ctx.fillRect(bx, by, Math.min(tw, bw), fs+6);
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${ico} ${name}`, bx+5, by+3);
+  });
+
+  const entry = {
+    dataURL   : flat.toDataURL('image/jpeg', 0.82),
+    products  : prods,
+    timestamp : new Date(),
+  };
+  history.unshift(entry);   // newest first
+  if (history.length > 40) history.pop();
+  renderFilmstrip();
+}
+
+function renderFilmstrip() {
+  const strip = document.getElementById('filmstrip');
+  const wrap  = document.getElementById('filmstrip-wrap');
+  wrap.style.display = 'block';
+  strip.innerHTML = '';
+  history.forEach((entry, i) => {
+    const h = entry.products.filter(p=>p.threat==='high').length;
+    const m = entry.products.filter(p=>p.threat==='med').length;
+    const s = entry.products.filter(p=>p.threat==='low'||p.threat==='clean').length;
+    const badgeCls = h ? 'h' : m ? 'm' : 's';
+    const badgeTxt = h ? `☠${h}` : m ? `⚠${m}` : `✓`;
+    const thumb = document.createElement('div');
+    thumb.className = 'film-thumb' + (i===0?' active':'');
+    thumb.innerHTML = `<img src="${entry.dataURL}" alt="scan ${i+1}">
+      <div class="film-badge ${badgeCls}">${badgeTxt}</div>`;
+    thumb.onclick = () => openLightbox(i);
+    strip.appendChild(thumb);
+  });
+}
+
+function openLightbox(idx) {
+  const entry = history[idx];
+  if (!entry) return;
+  document.getElementById('lb-img').src = entry.dataURL;
+  const h = entry.products.filter(p=>p.threat==='high').length;
+  const m = entry.products.filter(p=>p.threat==='med').length;
+  const s = entry.products.filter(p=>p.threat==='low'||p.threat==='clean').length;
+  const t = entry.timestamp;
+  const ts = t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('lb-info').textContent =
+    `${ts}  ·  ${h ? `☠ ${h} toxic  ` : ''}${m ? `⚠ ${m} caution  ` : ''}${s ? `✓ ${s} ok` : ''}`.trim();
+  document.getElementById('lightbox').classList.add('open');
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
 }
 
 function clearScan() { enterLive(); }
