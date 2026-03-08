@@ -276,6 +276,21 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 }
 #cd-label { font-size:0.44rem; letter-spacing:4px; color:rgba(245,240,232,0.3); text-transform:uppercase; }
 
+/* ── FOCUS RING ── */
+#focus-ring {
+  position:absolute; z-index:25; pointer-events:none;
+  width:64px; height:64px; border-radius:50%;
+  border:2px solid rgba(245,240,232,0.9);
+  box-shadow:0 0 0 1px rgba(0,0,0,0.4);
+  transform:translate(-50%,-50%) scale(1.4);
+  opacity:0; transition:transform 0.2s ease, opacity 0.15s ease;
+}
+#focus-ring.pop {
+  transform:translate(-50%,-50%) scale(1);
+  opacity:1;
+}
+body.vhs #focus-ring { border-color:rgba(0,255,60,0.9); }
+
 /* ── VHS THEME ── */
 body.vhs { background:#0a0600; }
 body.vhs #scanner { background:#0a0600; }
@@ -403,7 +418,8 @@ body.vhs #vhs-btn span:last-child { color:rgba(0,255,60,0.5); }
 
 <!-- ── SCANNER ── -->
 <div id="scanner">
-  <video id="video" autoplay playsinline muted></video>
+  <video id="video" autoplay playsinline muted onclick="refocus()"></video>
+  <div id="focus-ring"></div>
   <canvas id="photo"></canvas>
   <canvas id="cap"></canvas>
   <div id="ov"></div>
@@ -448,7 +464,7 @@ body.vhs #vhs-btn span:last-child { color:rgba(0,255,60,0.5); }
     </div>
   </div>
 
-  <div id="err">
+  <div id="err" onclick="hideErr()">
     <div class="etitle">⚠ ERROR</div>
     <div class="emsg" id="emsg">—</div>
     <button class="ekey" onclick="goBack()">Change API Key</button>
@@ -525,7 +541,7 @@ function startCooldown(seconds) {
       overlay.classList.remove('show');
       clearInterval(cdTimer);
       cdTimer = null;
-      setPill('', 'TAP SHUTTER TO SCAN');
+      enterLive();
       return;
     }
     remaining--;
@@ -623,6 +639,56 @@ async function flipCam() {
   await startCam();
 }
 
+async function refocus(e) {
+  if (appState !== 'live') return;
+
+  // Show focus ring at tap point
+  const ring = document.getElementById('focus-ring');
+  if (e) {
+    ring.style.left = e.offsetX + 'px';
+    ring.style.top  = e.offsetY + 'px';
+  } else {
+    ring.style.left = '50%';
+    ring.style.top  = '50%';
+  }
+  ring.classList.remove('pop');
+  requestAnimationFrame(() => ring.classList.add('pop'));
+  setTimeout(() => ring.classList.remove('pop'), 700);
+
+  // Try native focus via ImageCapture / advanced constraints first
+  const track = stream && stream.getVideoTracks()[0];
+  if (track) {
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    // Try pointOfInterest focus if supported (Chrome Android)
+    if (caps.focusMode && caps.focusMode.includes('manual') && e) {
+      try {
+        const vw = video.offsetWidth  || window.innerWidth;
+        const vh = video.offsetHeight || window.innerHeight;
+        await track.applyConstraints({
+          advanced:[{
+            focusMode:'manual',
+            pointOfInterest:{ x: e.offsetX/vw, y: e.offsetY/vh }
+          }]
+        });
+        // Briefly switch back to continuous
+        setTimeout(()=> track.applyConstraints({advanced:[{focusMode:'continuous'}]}), 800);
+        return;
+      } catch(err) { /* fall through to stream restart */ }
+    }
+    // Try toggling focusMode continuous to shake it loose
+    if (caps.focusMode && caps.focusMode.includes('continuous')) {
+      try {
+        await track.applyConstraints({ advanced:[{ focusMode:'none' }] });
+        await track.applyConstraints({ advanced:[{ focusMode:'continuous' }] });
+        return;
+      } catch(err) { /* fall through */ }
+    }
+  }
+
+  // Last resort: restart the stream entirely (always works, slight flash)
+  await startCam();
+}
+
 // ── STATE TRANSITIONS ──
 function enterLive() {
   appState = 'live';
@@ -712,9 +778,9 @@ async function doShoot() {
   } catch(e) {
     const msg = e.message || 'Scan failed.';
     if (msg.includes('Rate limit') || msg.includes('429')) {
-      enterLive();
+      // Stay frozen — keep the photo visible, just show cooldown on top
+      enterFrozen();
       startCooldown(60);
-      setPill('analyzing', 'RATE LIMITED · COOLING DOWN…');
     } else {
       showErr(msg);
       enterLive();
@@ -1026,8 +1092,6 @@ function showErr(msg) {
   document.getElementById('emsg').textContent = msg;
   e.style.display = 'block';
   requestAnimationFrame(()=>e.classList.add('show'));
-  clearTimeout(window._et);
-  window._et = setTimeout(hideErr, 12000);
 }
 function hideErr() {
   const e = document.getElementById('err');
