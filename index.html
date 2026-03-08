@@ -12,9 +12,8 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 
 /* ── API SCREEN ── */
 #api-screen {
-  position:absolute; inset:0; z-index:100;
-  background:#090603; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; padding:24px;
+  position:absolute; inset:0; z-index:100; background:#090603;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px;
 }
 .logo { font-family:'Bebas Neue',sans-serif; font-size:2rem; letter-spacing:8px; margin-bottom:4px; }
 .logo em { color:var(--red); font-style:normal; }
@@ -40,20 +39,75 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 /* ── SCANNER SCREEN ── */
 #scanner { position:absolute; inset:0; display:none; background:#000; }
 
-/* Video — contain so no zoom */
+/* Live video — always running underneath */
 #video {
   position:absolute; inset:0; width:100%; height:100%;
   object-fit:contain; display:block;
 }
 
-/* Effect canvas — sized/positioned by JS to match video rect */
-#fx { position:absolute; display:block; pointer-events:none; }
+/* Frozen photo canvas — shown on top of video when frozen */
+#photo {
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:contain; display:none;
+}
 
 /* Hidden capture canvas */
 #cap { display:none; }
 
-/* Overlay — terminals sit here */
+/* Overlay layer — bounding box divs + terminals */
 #ov { position:absolute; inset:0; pointer-events:none; z-index:10; }
+
+/* ── BOUNDING BOX OVERLAYS ── */
+.bbox {
+  position:absolute;
+  border-radius:6px;
+  border:2px solid;
+  pointer-events:none;
+  animation:boxIn 0.35s cubic-bezier(0.34,1.4,0.64,1) forwards;
+}
+@keyframes boxIn { from{opacity:0;transform:scale(0.9);}to{opacity:1;transform:scale(1);} }
+.bbox.high { border-color:var(--red);   background:rgba(232,41,26,0.12); }
+.bbox.med  { border-color:var(--amber); background:rgba(212,130,26,0.1); }
+.bbox.low  { border-color:var(--green); background:rgba(0,204,80,0.08); }
+.bbox.clean{ border-color:rgba(245,240,232,0.2); background:rgba(245,240,232,0.03); }
+
+.bbox-label {
+  position:absolute; top:0; left:0; right:0;
+  padding:3px 7px;
+  display:flex; align-items:center; gap:4px;
+  font-family:'Bebas Neue',sans-serif;
+  font-size:clamp(0.52rem,1.8vw,0.75rem);
+  letter-spacing:2px; white-space:nowrap; overflow:hidden;
+  border-radius:4px 4px 0 0;
+}
+.bbox.high  .bbox-label { background:rgba(232,41,26,0.88); }
+.bbox.med   .bbox-label { background:rgba(212,130,26,0.88); }
+.bbox.low   .bbox-label { background:rgba(0,160,48,0.82); }
+.bbox.clean .bbox-label { background:rgba(0,0,0,0.55); }
+
+/* ── NUTRITION TERMINAL ── */
+.term {
+  position:absolute; background:rgba(0,0,0,0.93);
+  border:1px solid rgba(0,204,80,0.5); border-radius:4px;
+  padding:7px 9px; font-family:'VT323',monospace;
+  font-size:clamp(0.68rem,2vw,0.88rem); line-height:1.4;
+  pointer-events:none; z-index:15;
+  animation:tin 0.22s ease forwards;
+  box-shadow:0 0 10px rgba(0,204,80,0.1); overflow:hidden;
+}
+@keyframes tin { from{opacity:0;transform:scaleY(0.88);}to{opacity:1;transform:scaleY(1);} }
+.term::after { content:''; position:absolute; inset:0; background:repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 4px); pointer-events:none; }
+.th { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0,204,80,0.15); padding-bottom:3px; margin-bottom:3px; }
+.ttitle  { font-size:0.7rem; color:var(--green); letter-spacing:2px; }
+.tthreat { font-size:0.62rem; letter-spacing:2px; }
+.t-high  { color:var(--red); }
+.t-med   { color:var(--amber); }
+.tprod   { font-size:0.65rem; color:var(--white); letter-spacing:1px; margin-bottom:3px; }
+.trow    { display:flex; gap:4px; font-size:0.68rem; margin:1px 0; }
+.tf      { color:var(--red); flex-shrink:0; }
+.ta      { color:#ff7b70; }
+.tw      { color:rgba(245,240,232,0.28); font-size:0.56rem; padding-left:11px; margin-bottom:2px; }
+.tv      { margin-top:4px; padding-top:3px; border-top:1px solid rgba(245,240,232,0.07); font-size:0.56rem; color:rgba(245,240,232,0.35); line-height:1.5; }
 
 /* ── TOP BAR ── */
 #top {
@@ -64,9 +118,13 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 }
 .tlogo { font-family:'Bebas Neue',sans-serif; font-size:clamp(1rem,3.5vw,1.35rem); letter-spacing:5px; }
 .tlogo em { color:var(--red); font-style:normal; }
-.trec  { display:flex; align-items:center; gap:4px; font-size:0.44rem; letter-spacing:2px; color:var(--red); }
-.rdot  { width:5px; height:5px; border-radius:50%; background:var(--red); animation:blink 1s ease infinite; }
+.trec  { display:flex; align-items:center; gap:4px; font-size:0.44rem; letter-spacing:2px; }
+.rdot  { width:5px; height:5px; border-radius:50%; animation:blink 1s ease infinite; }
 @keyframes blink { 0%,100%{opacity:1;}50%{opacity:0.08;} }
+.trec.live   { color:var(--red); }
+.trec.frozen { color:var(--amber); }
+.rdot.live   { background:var(--red); }
+.rdot.frozen { background:var(--amber); }
 
 /* ── STATUS PILL ── */
 #pill {
@@ -76,15 +134,20 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
   padding:4px 14px; border-radius:99px;
   font-size:0.42rem; letter-spacing:3px; text-transform:uppercase;
   color:rgba(245,240,232,0.32); white-space:nowrap;
-  display:flex; align-items:center; gap:5px;
+  display:flex; align-items:center; gap:5px; transition:color 0.3s;
 }
 .pdot { width:4px; height:4px; border-radius:50%; background:currentColor; flex-shrink:0; }
 #pill.analyzing { color:var(--amber); }
 #pill.analyzing .pdot { animation:blink 0.5s ease infinite; }
-#pill.done { color:var(--green); }
+#pill.done  { color:var(--green); }
+#pill.error { color:var(--red); }
 
 /* ── TALLY ── */
-#tally { position:absolute; z-index:20; bottom:100px; left:0; right:0; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; padding:0 16px; }
+#tally {
+  position:absolute; z-index:20;
+  bottom:105px; left:0; right:0;
+  display:flex; gap:6px; justify-content:center; flex-wrap:wrap; padding:0 16px;
+}
 .tb { font-size:0.44rem; letter-spacing:1px; padding:2px 8px; border-radius:2px; border:1px solid; text-transform:uppercase; }
 .tb.h { color:var(--red);   border-color:rgba(232,41,26,0.4);  background:rgba(232,41,26,0.1); }
 .tb.m { color:var(--amber); border-color:rgba(212,130,26,0.4); background:rgba(212,130,26,0.08); }
@@ -93,11 +156,10 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
 /* ── BOTTOM BAR ── */
 #bot {
   position:absolute; bottom:0; left:0; right:0; z-index:20;
-  padding:14px 24px max(env(safe-area-inset-bottom,18px),18px);
+  padding:14px 28px max(env(safe-area-inset-bottom,18px),18px);
   background:linear-gradient(to top,rgba(0,0,0,0.75),transparent);
   display:flex; align-items:center; justify-content:space-between;
 }
-/* Shutter */
 #shutter {
   width:clamp(62px,15vw,70px); height:clamp(62px,15vw,70px);
   border-radius:50%; border:3px solid rgba(245,240,232,0.58);
@@ -106,17 +168,29 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
   transition:transform 0.12s; -webkit-appearance:none;
 }
 #shutter:active { transform:scale(0.9); }
-.si { width:clamp(46px,10vw,52px); height:clamp(46px,10vw,52px); border-radius:50%; background:var(--white); transition:background 0.2s; }
-#shutter.busy .si { background:var(--amber); }
-#shutter.busy::before { content:''; position:absolute; inset:-6px; border-radius:50%; border:2px solid transparent; border-top-color:var(--amber); animation:spin 0.9s linear infinite; }
+.si {
+  width:clamp(46px,10vw,52px); height:clamp(46px,10vw,52px);
+  border-radius:50%; background:var(--white); transition:background 0.2s;
+}
+#shutter.analyzing .si { background:var(--amber); }
+#shutter.analyzing::before {
+  content:''; position:absolute; inset:-6px; border-radius:50%;
+  border:2px solid transparent; border-top-color:var(--amber);
+  animation:spin 0.9s linear infinite;
+}
 @keyframes spin { to{transform:rotate(360deg);} }
-#shutter.done .si { background:var(--green); }
+#shutter.frozen .si { background:var(--red); transform:scale(0.88); }
 
-.shlbl { font-size:0.42rem; letter-spacing:2px; color:rgba(245,240,232,0.3); text-transform:uppercase; text-align:center; margin-top:4px; }
 .sh-wrap { display:flex; flex-direction:column; align-items:center; gap:3px; }
+.shlbl   { font-size:0.42rem; letter-spacing:2px; color:rgba(245,240,232,0.3); text-transform:uppercase; text-align:center; }
 
-/* Side buttons */
-.sb { width:42px; height:42px; border-radius:50%; border:1px solid rgba(245,240,232,0.12); background:rgba(0,0,0,0.5); backdrop-filter:blur(8px); display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; font-size:0.9rem; gap:1px; -webkit-appearance:none; transition:transform 0.12s; }
+.sb {
+  width:42px; height:42px; border-radius:50%;
+  border:1px solid rgba(245,240,232,0.12); background:rgba(0,0,0,0.5);
+  backdrop-filter:blur(8px); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; cursor:pointer;
+  font-size:0.9rem; gap:1px; -webkit-appearance:none; transition:transform 0.12s;
+}
 .sb:active { transform:scale(0.88); }
 .sb span:last-child { font-size:0.3rem; letter-spacing:1px; color:rgba(245,240,232,0.25); text-transform:uppercase; }
 
@@ -125,37 +199,18 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
   position:absolute; top:66px; left:12px; right:12px; z-index:50;
   background:rgba(26,4,2,0.97); border:1px solid rgba(232,41,26,0.28);
   border-radius:8px; padding:10px 13px; display:none;
-  transform:translateY(-6px); opacity:0; transition:all 0.28s cubic-bezier(0.34,1.3,0.64,1);
+  transform:translateY(-6px); opacity:0;
+  transition:all 0.28s cubic-bezier(0.34,1.3,0.64,1);
 }
 #err.show { transform:translateY(0); opacity:1; }
 .etitle { font-family:'Bebas Neue',sans-serif; font-size:0.68rem; letter-spacing:3px; color:var(--red); margin-bottom:3px; }
-.emsg   { font-size:0.48rem; letter-spacing:1px; line-height:1.6; color:rgba(245,240,232,0.4); }
+.emsg   { font-size:0.48rem; letter-spacing:1px; line-height:1.6; color:rgba(245,240,232,0.4); word-break:break-word; }
 .ekey   { margin-top:6px; font-size:0.42rem; letter-spacing:2px; color:rgba(245,240,232,0.22); cursor:pointer; text-decoration:underline; background:none; border:none; font-family:'DM Mono',monospace; }
-
-/* ── NUTRITION TERMINAL ── */
-.term {
-  position:absolute; background:rgba(0,0,0,0.93); border:1px solid rgba(0,204,80,0.5);
-  border-radius:4px; padding:7px 9px; font-family:'VT323',monospace;
-  font-size:clamp(0.68rem,2vw,0.88rem); line-height:1.4; pointer-events:none;
-  animation:tin 0.22s ease forwards; box-shadow:0 0 10px rgba(0,204,80,0.1); overflow:hidden;
-}
-@keyframes tin { from{opacity:0;transform:scaleY(0.88);}to{opacity:1;transform:scaleY(1);} }
-.term::after { content:''; position:absolute; inset:0; background:repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 4px); pointer-events:none; }
-.th { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0,204,80,0.15); padding-bottom:3px; margin-bottom:3px; }
-.ttitle { font-size:0.7rem; color:var(--green); letter-spacing:2px; }
-.tthreat { font-size:0.62rem; letter-spacing:2px; }
-.high { color:var(--red); } .med { color:var(--amber); }
-.tprod { font-size:0.65rem; color:var(--white); letter-spacing:1px; margin-bottom:3px; }
-.trow  { display:flex; gap:4px; font-size:0.68rem; margin:1px 0; }
-.tf    { color:var(--red); flex-shrink:0; }
-.ta    { color:#ff7b70; }
-.tw    { color:rgba(245,240,232,0.28); font-size:0.56rem; padding-left:11px; margin-bottom:2px; }
-.tv    { margin-top:4px; padding-top:3px; border-top:1px solid rgba(245,240,232,0.07); font-size:0.56rem; color:rgba(245,240,232,0.35); line-height:1.5; }
 </style>
 </head>
 <body>
 
-<!-- API KEY SCREEN -->
+<!-- ── API SCREEN ── -->
 <div id="api-screen">
   <div class="logo">THEY<em>LIVE</em></div>
   <div class="sub">Grocery Scanner · AI Vision</div>
@@ -176,27 +231,26 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
     </div>
     <div class="hint" id="khint">
       Free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a><br>
-      Key is sent only to Google's API — never stored.
+      Key sent only to Google's API — never stored.
     </div>
     <button class="go" id="gobtn" onclick="launch()">Start Scanning</button>
     <div class="aerr" id="aerr"></div>
   </div>
 </div>
 
-<!-- SCANNER -->
+<!-- ── SCANNER ── -->
 <div id="scanner">
   <video id="video" autoplay playsinline muted></video>
-  <canvas id="fx"></canvas>
+  <canvas id="photo"></canvas>
   <canvas id="cap"></canvas>
   <div id="ov"></div>
 
   <div id="top">
     <div class="tlogo">THEY<em>LIVE</em></div>
-    <div class="trec"><div class="rdot"></div>LIVE</div>
+    <div class="trec live" id="rec"><div class="rdot live" id="rdot"></div><span id="rectext">LIVE</span></div>
   </div>
 
   <div id="pill"><div class="pdot"></div><span id="pilltext">TAP SHUTTER TO SCAN</span></div>
-
   <div id="tally"></div>
 
   <div id="err">
@@ -206,55 +260,56 @@ html, body { width:100%; height:100%; background:#000; color:var(--white); font-
   </div>
 
   <div id="bot">
-    <button class="sb" onclick="flip()"><span>🔄</span><span>Flip</span></button>
+    <button class="sb" onclick="flipCam()"><span>🔄</span><span>Flip</span></button>
     <div class="sh-wrap">
-      <button id="shutter" onclick="shoot()"><div class="si"></div></button>
+      <button id="shutter" onclick="onShutter()"><div class="si"></div></button>
       <div class="shlbl" id="shlbl">SNAP &amp; SCAN</div>
     </div>
-    <button class="sb" onclick="reset()"><span>✕</span><span>Clear</span></button>
+    <button class="sb" onclick="clearScan()"><span>✕</span><span>Clear</span></button>
   </div>
 </div>
 
 <script>
-// ── CONFIG ──
-let prov = 'g';   // 'g' = Gemini, 'c' = Claude
+// ── STATE ──
+// 'live'     : showing live video feed, ready to shoot
+// 'analyzing': photo taken, waiting for AI response
+// 'frozen'   : showing photo + overlays
+let appState = 'live';
+
+let prov   = 'g';
 let apiKey = '';
 let stream = null;
 let facing = 'environment';
-let busy   = false;
 let products = [];
 
-const video = document.getElementById('video');
-const fx    = document.getElementById('fx');
-const cap   = document.getElementById('cap');
-const ov    = document.getElementById('ov');
-const fxCtx = fx.getContext('2d');
-const capCtx= cap.getContext('2d');
-
-// Video rect in screen coords (set by fitFX)
-let vr = {x:0,y:0,w:0,h:0};
+const video   = document.getElementById('video');
+const photo   = document.getElementById('photo');  // canvas shown when frozen
+const cap     = document.getElementById('cap');     // hidden capture canvas
+const ov      = document.getElementById('ov');
+const photoCtx= photo.getContext('2d');
+const capCtx  = cap.getContext('2d');
 
 // ── API KEY SCREEN ──
 function setProv(p) {
   prov = p;
   document.getElementById('tg').classList.toggle('on', p==='g');
   document.getElementById('tc').classList.toggle('on', p==='c');
-  document.getElementById('klbl').textContent  = p==='g' ? 'Gemini API Key' : 'Anthropic API Key';
-  document.getElementById('key').placeholder   = p==='g' ? 'AIza...' : 'sk-ant-api03-...';
-  document.getElementById('khint').innerHTML   = p==='g'
-    ? 'Free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a><br>Key is sent only to Google\'s API — never stored.'
-    : 'Key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a><br>Key is sent only to Anthropic\'s API — never stored.';
+  document.getElementById('klbl').textContent = p==='g' ? 'Gemini API Key' : 'Anthropic API Key';
+  document.getElementById('key').placeholder  = p==='g' ? 'AIza...' : 'sk-ant-api03-...';
+  document.getElementById('khint').innerHTML  = p==='g'
+    ? 'Free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a><br>Key sent only to Google\'s API — never stored.'
+    : 'Key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a><br>Key sent only to Anthropic\'s API — never stored.';
   document.getElementById('key').value = '';
   document.getElementById('aerr').textContent = '';
 }
 
 function toggleEye() {
   const k = document.getElementById('key');
-  k.type = k.type==='password'?'text':'password';
+  k.type = k.type==='password' ? 'text' : 'password';
 }
 
 async function launch() {
-  const k = document.getElementById('key').value.trim();
+  const k   = document.getElementById('key').value.trim();
   const err = document.getElementById('aerr');
   const btn = document.getElementById('gobtn');
   if (!k) { err.textContent='Enter your API key.'; return; }
@@ -268,25 +323,25 @@ async function launch() {
   document.getElementById('api-screen').style.display = 'none';
   document.getElementById('scanner').style.display    = 'block';
   await startCam();
-  startLoop();
 }
 
 async function checkKey(k) {
   try {
     if (prov==='g') return (await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${k}`)).ok;
-    const r = await fetch('https://api.anthropic.com/v1/messages',{
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:5,messages:[{role:'user',content:'hi'}]})
     });
-    return r.ok||r.status===400;
-  } catch(e){ return true; }
+    return r.ok || r.status===400;
+  } catch(e) { return true; }
 }
 
 function goBack() {
   hideErr();
-  document.getElementById('api-screen').style.display='flex';
-  document.getElementById('scanner').style.display='none';
+  document.getElementById('api-screen').style.display = 'flex';
+  document.getElementById('scanner').style.display    = 'none';
+  enterLive();
 }
 
 // ── CAMERA ──
@@ -299,255 +354,188 @@ async function startCam() {
     });
     video.srcObject = stream;
     await video.play();
-    fitFX();
-  } catch(e) { showErr('Camera access denied. Check permissions and reload.'); }
+  } catch(e) {
+    showErr('Camera access denied. Check permissions and reload.');
+  }
 }
 
-async function flip() {
-  facing = facing==='environment'?'user':'environment';
-  reset();
+async function flipCam() {
+  facing = facing==='environment' ? 'user' : 'environment';
+  clearScan();
   await startCam();
 }
 
-// Compute where video is rendered (object-fit:contain) and size fx canvas to match
-function fitFX() {
-  const cw = video.offsetWidth  || window.innerWidth;
-  const ch = video.offsetHeight || window.innerHeight;
-  const vw = video.videoWidth   || 1280;
-  const vh = video.videoHeight  || 720;
-  if (!vw||!vh) { setTimeout(fitFX,200); return; }
-  const vaR=vw/vh, caR=cw/ch;
-  let rw,rh,rx,ry;
-  if(vaR>caR){rw=cw;rh=cw/vaR;rx=0;ry=(ch-rh)/2;}
-  else{rh=ch;rw=ch*vaR;rx=(cw-rw)/2;ry=0;}
-  vr={x:rx,y:ry,w:rw,h:rh};
-  fx.style.left=rx+'px'; fx.style.top=ry+'px';
-  fx.style.width=rw+'px'; fx.style.height=rh+'px';
-  fx.width=Math.round(rw); fx.height=Math.round(rh);
+// ── STATE TRANSITIONS ──
+function enterLive() {
+  appState = 'live';
+  photo.style.display = 'none';
+  video.style.display = 'block';
+  ov.innerHTML = '';
+  products = [];
+  document.getElementById('tally').innerHTML = '';
+  document.getElementById('shutter').className = '';
+  document.getElementById('shlbl').textContent = 'SNAP & SCAN';
+  setRec('live');
+  setPill('', 'TAP SHUTTER TO SCAN');
+  hideErr();
 }
 
-window.addEventListener('resize',()=>{ fitFX(); });
-window.addEventListener('orientationchange',()=>setTimeout(fitFX,300));
-video.addEventListener('loadedmetadata', fitFX);
+function enterAnalyzing() {
+  appState = 'analyzing';
+  document.getElementById('shutter').className = 'analyzing';
+  document.getElementById('shlbl').textContent = 'ANALYZING…';
+  setPill('analyzing', 'ANALYZING…');
+  setRec('frozen');
+}
 
-// ── RENDER LOOP — just mirrors live video onto fx canvas ──
-let raf=null;
-let frozen=false;
-
-function startLoop(){
-  function loop(){
-    raf=requestAnimationFrame(loop);
-    if(frozen||video.readyState<2)return;
-    const w=fx.width,h=fx.height;
-    if(!w||!h)return;
-    fxCtx.drawImage(video,0,0,w,h);
-    if(products.length) drawOverlays(w,h);
-  }
-  loop();
+function enterFrozen() {
+  appState = 'frozen';
+  document.getElementById('shutter').className = 'frozen';
+  document.getElementById('shlbl').textContent = 'TAP TO RESUME';
+  setRec('frozen');
 }
 
 // ── SHUTTER ──
-async function shoot(){
-  if(busy)return;
+function onShutter() {
+  if (appState === 'analyzing') return;   // ignore while working
+  if (appState === 'frozen') { enterLive(); return; }
+  doShoot();
+}
 
-  // If showing frozen result, unfreeze and go back to live
-  if(frozen){
-    frozen=false;
-    products=[];
-    ov.innerHTML='';
-    document.getElementById('tally').innerHTML='';
-    document.getElementById('shutter').classList.remove('done');
-    document.getElementById('shlbl').textContent='SNAP & SCAN';
-    setPill('','TAP SHUTTER TO SCAN');
+async function doShoot() {
+  // Check camera is ready
+  if (!video.videoWidth || !video.videoHeight || video.readyState < 2) {
+    showErr('Camera not ready. Wait a moment and try again.');
     return;
   }
 
-  busy=true;
-  frozen=false;
+  enterAnalyzing();
   hideErr();
-  document.getElementById('shutter').classList.add('busy');
-  document.getElementById('shlbl').textContent='ANALYZING…';
-  setPill('analyzing','ANALYZING…');
 
-  // Capture frame
-  const vw=video.videoWidth||0, vh=video.videoHeight||0;
-  if(!vw||!vh||video.readyState<2){
-    done(false,'Camera not ready. Wait a moment.');
-    return;
-  }
-  const scale=Math.min(1,960/vw);
-  const cw=Math.round(vw*scale), ch=Math.round(vh*scale);
-  cap.width=cw; cap.height=ch;
-  capCtx.drawImage(video,0,0,cw,ch);
-  const b64=cap.toDataURL('image/jpeg',0.65).split(',')[1];
+  // ── Capture frame ──
+  const vw = video.videoWidth, vh = video.videoHeight;
+  // Downsample to max 960px wide for API
+  const scale = Math.min(1, 960 / vw);
+  const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
+  cap.width = cw; cap.height = ch;
+  capCtx.drawImage(video, 0, 0, cw, ch);
+  const b64 = cap.toDataURL('image/jpeg', 0.75).split(',')[1];
 
+  // ── Freeze the photo canvas to match what video is showing ──
+  // Size photo canvas to the video element's display size
+  const dw = video.offsetWidth  || window.innerWidth;
+  const dh = video.offsetHeight || window.innerHeight;
+  photo.width  = dw;
+  photo.height = dh;
+  // Draw video frame, respecting object-fit:contain letterboxing
+  const vaR = vw/vh, daR = dw/dh;
+  let rw,rh,rx,ry;
+  if(vaR>daR){rw=dw;rh=dw/vaR;rx=0;ry=(dh-rh)/2;}
+  else{rh=dh;rw=dh*vaR;rx=(dw-rw)/2;ry=0;}
+  photoCtx.fillStyle='#000';
+  photoCtx.fillRect(0,0,dw,dh);
+  photoCtx.drawImage(video,rx,ry,rw,rh);
+  // Show photo canvas, hide video
+  photo.style.cssText='position:absolute;inset:0;width:100%;height:100%;display:block;';
+  video.style.display='none';
+
+  // ── Call AI ──
   try {
-    const res = prov==='g' ? await callGemini(b64) : await callClaude(b64);
-    products=res;
+    const results = prov==='g' ? await callGemini(b64) : await callClaude(b64);
+    products = results;
     updateTally();
-    // Bake frozen frame
-    frozen=true;
-    fxCtx.drawImage(video,0,0,fx.width,fx.height);
-    if(products.length) drawOverlays(fx.width,fx.height);
-    renderTerminals();
-    document.getElementById('shutter').classList.remove('busy');
-    document.getElementById('shutter').classList.add('done');
-    document.getElementById('shlbl').textContent='TAP TO CLEAR';
-    setPill('done', products.length ? `${products.length} PRODUCT${products.length>1?'S':''} FOUND` : 'NOTHING DETECTED');
-  } catch(e){
-    done(false, e.message||'Scan failed.');
+    renderOverlays(rx, ry, rw, rh);
+    enterFrozen();
+    setPill('done', products.length
+      ? `${products.length} PRODUCT${products.length>1?'S':''} · TAP SHUTTER TO RESUME`
+      : 'NOTHING DETECTED · TAP SHUTTER TO RESUME');
+  } catch(e) {
+    showErr(e.message || 'Scan failed.');
+    enterLive();
   }
-  busy=false;
 }
 
-function done(ok, msg){
-  busy=false;
-  frozen=false;
-  document.getElementById('shutter').classList.remove('busy','done');
-  document.getElementById('shlbl').textContent='SNAP & SCAN';
-  setPill('','TAP SHUTTER TO SCAN');
-  if(!ok) showErr(msg);
-}
+// ── OVERLAYS  (bounding box divs over the frozen photo) ──
+// rx,ry,rw,rh = where the video frame sits within the photo canvas
+function renderOverlays(rx, ry, rw, rh) {
+  ov.innerHTML = '';
 
-function reset(){
-  frozen=false;
-  products=[];
-  ov.innerHTML='';
-  document.getElementById('tally').innerHTML='';
-  document.getElementById('shutter').classList.remove('busy','done');
-  document.getElementById('shlbl').textContent='SNAP & SCAN';
-  setPill('','TAP SHUTTER TO SCAN');
-  hideErr();
-}
+  products.forEach(p => {
+    const pos = p.position;
+    if (!pos) return;
 
-// ── OVERLAYS ──
-function drawOverlays(cw,ch){
-  products.forEach(p=>{
-    const col={
-      high:  {stroke:'#e8291a',glow:'rgba(232,41,26,0.5)'},
-      med:   {stroke:'#d4821a',glow:'rgba(212,130,26,0.4)'},
-      low:   {stroke:'#00cc50',glow:'rgba(0,204,80,0.3)'},
-      clean: {stroke:'rgba(245,240,232,0.3)',glow:'rgba(245,240,232,0.1)'},
-    }[p.threat]||{stroke:'#888',glow:'rgba(128,128,128,0.2)'};
+    // Map 0-1 coords → screen px
+    const bx = Math.round(rx + pos.x * rw);
+    const by = Math.round(ry + pos.y * rh);
+    const bw = Math.round(pos.w * rw);
+    const bh = Math.round(pos.h * rh);
+    if (bw < 4 || bh < 4) return;
 
-    const pts=getPath(p,cw,ch);
-    if(!pts||pts.length<3)return;
-
-    // Desaturate interior for toxic items
-    if(p.threat==='high'||p.threat==='med'){
-      fxCtx.save();
-      fxCtx.beginPath();
-      fxCtx.moveTo(pts[0][0],pts[0][1]);
-      pts.slice(1).forEach(([x,y])=>fxCtx.lineTo(x,y));
-      fxCtx.closePath();
-      fxCtx.clip();
-      const xs=pts.map(q=>q[0]),ys=pts.map(q=>q[1]);
-      const mx=Math.max(0,Math.floor(Math.min(...xs))),
-            my=Math.max(0,Math.floor(Math.min(...ys))),
-            mw=Math.min(cw,Math.ceil(Math.max(...xs)))-mx,
-            mh=Math.min(ch,Math.ceil(Math.max(...ys)))-my;
-      if(mw>1&&mh>1){
-        try{
-          const id=fxCtx.getImageData(mx,my,mw,mh);
-          const d=id.data, dk=p.threat==='high'?0.5:0.7;
-          for(let i=0;i<d.length;i+=4){
-            const g=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])*dk;
-            d[i]=d[i+1]=d[i+2]=g;
-          }
-          fxCtx.putImageData(id,mx,my);
-        }catch(e){}
-      }
-      fxCtx.restore();
+    // ── Desaturate the region on the photo canvas ──
+    if (p.threat === 'high' || p.threat === 'med') {
+      try {
+        const id = photoCtx.getImageData(bx, by, bw, bh);
+        const d  = id.data;
+        const dk = p.threat==='high' ? 0.55 : 0.72;
+        for (let i = 0; i < d.length; i += 4) {
+          const g = (0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]) * dk;
+          d[i] = d[i+1] = d[i+2] = g;
+        }
+        photoCtx.putImageData(id, bx, by);
+      } catch(e) {}
     }
 
-    // Glow stroke
-    fxCtx.save();
-    tracePath(pts);
-    fxCtx.strokeStyle=col.glow; fxCtx.lineWidth=9; fxCtx.lineJoin='round';
-    fxCtx.shadowColor=col.glow; fxCtx.shadowBlur=16;
-    fxCtx.stroke();
-    fxCtx.restore();
+    // ── Bounding box div ──
+    const box = document.createElement('div');
+    box.className = `bbox ${p.threat}`;
+    box.style.cssText = `left:${bx}px;top:${by}px;width:${bw}px;height:${bh}px;`;
 
-    // Crisp stroke
-    fxCtx.save();
-    tracePath(pts);
-    fxCtx.strokeStyle=col.stroke; fxCtx.lineWidth=p.threat==='high'?2.5:1.8; fxCtx.lineJoin='round';
-    fxCtx.stroke();
-    fxCtx.restore();
-
-    // Floating label above top of polygon
-    if(p.threat!=='clean'){
-      const xs=pts.map(q=>q[0]),ys=pts.map(q=>q[1]);
-      const topPt=pts.reduce((a,b)=>b[1]<a[1]?b:a);
-      const ico={high:'☠',med:'⚠',low:'○'}[p.threat]||'';
-      const lbl=ico+' '+(p.brand||p.name).toUpperCase().slice(0,18);
-      const fs=Math.max(9,Math.min(13,(Math.max(...xs)-Math.min(...xs))/7));
-      fxCtx.save();
-      fxCtx.font=`500 ${fs}px "DM Mono",monospace`;
-      fxCtx.textAlign='center'; fxCtx.textBaseline='bottom';
-      const tw=fxCtx.measureText(lbl).width, pd=4;
-      const lx=Math.max(tw/2+pd,Math.min(cw-tw/2-pd,topPt[0]));
-      const ly=Math.max(fs+pd*2,topPt[1]-6);
-      fxCtx.beginPath();
-      fxCtx.roundRect(lx-tw/2-pd,ly-fs-pd,tw+pd*2,fs+pd*2,3);
-      fxCtx.fillStyle=p.threat==='high'?'rgba(232,41,26,0.9)':'rgba(212,130,26,0.9)';
-      fxCtx.fill();
-      fxCtx.fillStyle='white';
-      fxCtx.fillText(lbl,lx,ly);
-      fxCtx.restore();
-    }
+    const ico  = {high:'☠',med:'⚠',low:'○',clean:'✓'}[p.threat] || '';
+    const name = (p.brand||p.name).toUpperCase().slice(0,20);
+    box.innerHTML = `<div class="bbox-label"><span>${ico}</span><span>${name}</span></div>`;
+    ov.appendChild(box);
   });
-}
 
-function tracePath(pts){
-  fxCtx.beginPath();
-  fxCtx.moveTo(pts[0][0],pts[0][1]);
-  pts.slice(1).forEach(([x,y])=>fxCtx.lineTo(x,y));
-  fxCtx.closePath();
-}
+  // ── Nutrition terminals for flagged items ──
+  const flagged = products
+    .filter(p => p.flags && p.flags.length && p.position && (p.threat==='high'||p.threat==='med'))
+    .sort((a,b) => ['high','med'].indexOf(a.threat) - ['high','med'].indexOf(b.threat))
+    .slice(0, 3);
 
-function getPath(p,cw,ch){
-  if(p.polygon&&p.polygon.length>=4)
-    return p.polygon.map(([x,y])=>[x*cw,y*ch]);
-  if(!p.position)return null;
-  const {x,y,w,h}=p.position;
-  return[[x*cw,y*ch],[( x+w)*cw,y*ch],[(x+w)*cw,(y+h)*ch],[x*cw,(y+h)*ch]];
-}
+  const sw = window.innerWidth, sh = window.innerHeight;
 
-// ── NUTRITION TERMINALS ──
-function renderTerminals(){
-  ov.innerHTML='';
-  const flagged=products
-    .filter(p=>p.flags&&p.flags.length&&p.position&&(p.threat==='high'||p.threat==='med'))
-    .sort((a,b)=>['high','med'].indexOf(a.threat)-['high','med'].indexOf(b.threat))
-    .slice(0,3);
+  flagged.forEach(p => {
+    const pos = p.position;
+    const bx  = rx + pos.x * rw;
+    const by  = ry + pos.y * rh;
+    const bw  = pos.w * rw;
+    const bh  = pos.h * rh;
 
-  const sw=window.innerWidth, sh=window.innerHeight;
+    const tw  = Math.max(150, Math.min(bw, 215));
+    const fcount = Math.min(p.flags.length, 4);
+    const estH   = 52 + fcount * 32 + 30;
 
-  flagged.forEach(p=>{
-    const pos=p.position;
-    const px=vr.x+pos.x*vr.w, py=vr.y+pos.y*vr.h;
-    const pw=pos.w*vr.w,       ph=pos.h*vr.h;
-    const tw=Math.max(150,Math.min(pw,210));
-    const fcount=Math.min(p.flags.length,4);
-    const estH=52+fcount*32+32;
-    let lx=px+3, ly=py+20;
-    if(lx+tw>sw-6) lx=Math.max(4,sw-tw-6);
-    if(ly+estH>sh-110) ly=Math.max(py-estH-2,4);
+    let lx = bx + 3;
+    let ly = by + 24;
+    if (lx + tw > sw - 6) lx = Math.max(4, sw - tw - 6);
+    if (ly + estH > sh - 110) ly = Math.max(by - estH - 2, 4);
 
-    const tword=p.threat==='high'?'⚠ DANGER':'⚠ WARNING';
-    const tcls=p.threat==='high'?'high':'med';
-    const rows=p.flags.slice(0,4).map(f=>{
-      const why=WHY[f]||'Potentially harmful substance';
+    const tword = p.threat==='high' ? '⚠ DANGER' : '⚠ WARNING';
+    const tcls  = 't-' + p.threat;
+    const rows  = p.flags.slice(0,4).map(f => {
+      const why = WHY[f] || 'Potentially harmful substance';
       return `<div class="trow"><span class="tf">!</span><span class="ta">${f}</span></div>`
-            +`<div class="tw">${why}</div>`;
+           + `<div class="tw">${why}</div>`;
     }).join('');
 
-    const el=document.createElement('div');
-    el.className='term';
-    el.style.cssText=`left:${Math.round(lx)}px;top:${Math.round(ly)}px;width:${Math.round(tw)}px`;
-    el.innerHTML=`
-      <div class="th"><span class="ttitle">// SCAN</span><span class="tthreat ${tcls}">${tword}</span></div>
+    const el = document.createElement('div');
+    el.className = 'term';
+    el.style.cssText = `left:${Math.round(lx)}px;top:${Math.round(ly)}px;width:${Math.round(tw)}px;`;
+    el.innerHTML = `
+      <div class="th">
+        <span class="ttitle">// SCAN</span>
+        <span class="tthreat ${tcls}">${tword}</span>
+      </div>
       <div class="tprod">${p.name}</div>
       ${rows}
       <div class="tv">${p.verdict}</div>`;
@@ -555,7 +543,138 @@ function renderTerminals(){
   });
 }
 
-const WHY={
+function clearScan() { enterLive(); }
+
+// ── AI CALLS ──
+function repairJSON(txt) {
+  try { JSON.parse(txt); return txt; } catch(e) {}
+  let out = txt.replace(/,\s*$/, '');
+  const ob = (out.match(/\{/g)||[]).length - (out.match(/\}/g)||[]).length;
+  const ab = (out.match(/\[/g)||[]).length - (out.match(/\]/g)||[]).length;
+  for (let i=0;i<ab;i++) out+=']';
+  for (let i=0;i<ob;i++) out+='}';
+  return out;
+}
+
+const SYS = `You are a toxicity-analysis AI in a grocery store scanner app.
+Analyse the image. Identify every visible consumer product (food, drinks, cleaning products, laundry detergents, dish soap, personal care, household chemicals, etc).
+For each product assess toxicity of its known ingredients/chemicals.
+
+Return ONLY raw valid JSON, no markdown fences:
+{"products":[{"name":"...","brand":"...","threat":"high|med|low|clean","flags":["Substance"],"verdict":"One sentence.","position":{"x":0.0,"y":0.0,"w":0.0,"h":0.0}}]}
+
+Rules:
+- position: 0-1 fractions of the image (x=left edge, y=top edge, w=width, h=height of bounding box around the product)
+- threat: high=carcinogens/endocrine disruptors, med=concerning, low=minor concerns, clean=none
+- flags: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, MSG, Titanium Dioxide, Acesulfame-K, Sucralose, Sodium Lauryl Sulfate, Sodium Laureth Sulfate, 1,4-Dioxane, Quaternary Ammonium Compounds, Chlorine Bleach, Formaldehyde Releasers, Triclosan, Artificial Fragrance, Phthalates, Parabens, Oxybenzone, PFAS, Bisphenol A (BPA)
+- No products visible: {"products":[]}`;
+
+async function callGemini(b64) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        system_instruction: { parts:[{text:SYS}] },
+        contents:[{ role:'user', parts:[
+          { inline_data:{ mime_type:'image/jpeg', data:b64 } },
+          { text:'Identify all products. Return JSON only.' }
+        ]}],
+        generationConfig:{ temperature:0.1, maxOutputTokens:4000 }
+      })
+    });
+  } catch(e) { throw new Error('Network error — check your connection.'); }
+
+  const data = await res.json().catch(()=>null);
+  if (!res.ok) {
+    const m = data?.error?.message || `Gemini ${res.status}`;
+    if (res.status===429) throw new Error('Rate limit — wait 60s and try again.');
+    if (res.status===404) throw new Error('Gemini model not available for this key.');
+    throw new Error(m);
+  }
+  if (!data?.candidates?.length) {
+    throw new Error(`Blocked: ${data?.promptFeedback?.blockReason||'no response'}`);
+  }
+  let txt = data.candidates[0]?.content?.parts?.[0]?.text || '';
+  txt = txt.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  if (!txt) throw new Error('Empty response from Gemini.');
+  txt = repairJSON(txt);
+  try { return JSON.parse(txt).products || []; }
+  catch(e) { throw new Error(`Parse error: ${txt.slice(0,120)}`); }
+}
+
+async function callClaude(b64) {
+  let res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514', max_tokens:4000, system:SYS,
+        messages:[{ role:'user', content:[
+          { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:b64 } },
+          { type:'text',  text:'Identify all products. Return JSON only.' }
+        ]}]
+      })
+    });
+  } catch(e) { throw new Error('Network error — check your connection.'); }
+
+  const data = await res.json().catch(()=>null);
+  if (!res.ok) {
+    if (res.status===401) throw new Error('Invalid API key.');
+    if (res.status===429) throw new Error('Rate limit — wait a moment.');
+    throw new Error(data?.error?.message || `Claude ${res.status}`);
+  }
+  let txt = (data?.content||[]).map(b=>b.text||'').join('').trim();
+  txt = txt.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  txt = repairJSON(txt);
+  try { return JSON.parse(txt).products || []; }
+  catch(e) { throw new Error(`Parse error: ${txt.slice(0,120)}`); }
+}
+
+// ── UI HELPERS ──
+function setRec(mode) {
+  const rec  = document.getElementById('rec');
+  const rdot = document.getElementById('rdot');
+  const txt  = document.getElementById('rectext');
+  rec.className  = `trec ${mode}`;
+  rdot.className = `rdot ${mode}`;
+  txt.textContent = mode==='live' ? 'LIVE' : 'PHOTO';
+}
+
+function setPill(cls, txt) {
+  const p = document.getElementById('pill');
+  p.className = cls || '';
+  document.getElementById('pilltext').textContent = txt;
+}
+
+function updateTally() {
+  const t = document.getElementById('tally');
+  t.innerHTML = '';
+  const h = products.filter(p=>p.threat==='high').length;
+  const m = products.filter(p=>p.threat==='med').length;
+  const s = products.filter(p=>p.threat==='low'||p.threat==='clean').length;
+  if (h) t.innerHTML += `<span class="tb h">☠ ${h} TOXIC</span>`;
+  if (m) t.innerHTML += `<span class="tb m">⚠ ${m} CAUTION</span>`;
+  if (s) t.innerHTML += `<span class="tb s">✓ ${s} OK</span>`;
+}
+
+function showErr(msg) {
+  const e = document.getElementById('err');
+  document.getElementById('emsg').textContent = msg;
+  e.style.display = 'block';
+  requestAnimationFrame(()=>e.classList.add('show'));
+  clearTimeout(window._et);
+  window._et = setTimeout(hideErr, 12000);
+}
+function hideErr() {
+  const e = document.getElementById('err');
+  e.classList.remove('show');
+  setTimeout(()=>{ e.style.display='none'; }, 300);
+}
+
+const WHY = {
   'Red 40':'Petroleum dye · ADHD links in children',
   'Yellow 5':'Petroleum dye · allergic reactions',
   'Yellow 6':'Petroleum dye · adrenal tumors in animals',
@@ -570,7 +689,6 @@ const WHY={
   'Aspartame':'IARC Group 2B possible carcinogen',
   'Caramel Color 4-MEI':'4-MEI carcinogen formed in production',
   'Azodicarbonamide':'Banned EU & Australia · asthma links',
-  'Propyl Gallate':'Possible endocrine disruptor',
   'MSG':'Excitotoxin · sensitivity in some people',
   'Titanium Dioxide':'Banned EU food use · DNA damage in studies',
   'Acesulfame-K':'Possible carcinogen · limited long-term data',
@@ -578,142 +696,17 @@ const WHY={
   'Sodium Lauryl Sulfate':'Skin irritant · disrupts cell membranes',
   'Sodium Laureth Sulfate':'Often contaminated with 1,4-Dioxane',
   '1,4-Dioxane':'Probable carcinogen · EPA hazardous substance',
-  'Optical Brighteners':'Skin sensitizer · toxic to aquatic life',
   'Quaternary Ammonium Compounds':'Respiratory irritant · asthma trigger',
   'Chlorine Bleach':'Respiratory irritant · forms toxic byproducts',
-  'Ammonia':'Irritant · reacts with bleach to form toxic gas',
   'Formaldehyde Releasers':'Formaldehyde is IARC Group 1 carcinogen',
   'Triclosan':'Endocrine disruptor · banned in some EU products',
-  'Nonylphenol Ethoxylates':'Hormone disruptor · banned in EU',
   'Artificial Fragrance':'Up to 3,000 undisclosed chemicals',
   'Phthalates':'Endocrine disruptors · reproductive toxicity',
-  'Phosphates':'Aquatic ecosystem damage · algal blooms',
   'Parabens':'Estrogen mimics · linked to breast cancer',
-  'Formaldehyde':'IARC Group 1 carcinogen · respiratory hazard',
-  'Synthetic Fragrance':'Undisclosed chemical mixture · common sensitizer',
-  'PEG Compounds':'Often contaminated with ethylene oxide',
   'Oxybenzone':'Endocrine disruptor · coral reef damage',
-  'Retinyl Palmitate':'May form carcinogens in UV light',
-  'Hydroquinone':'Possible carcinogen · banned in EU cosmetics',
-  'Coal Tar Dyes':'Known carcinogens · banned in several countries',
-  'Lead Acetate':'Neurotoxin · banned in EU & Canada',
   'PFAS':'"Forever chemicals" · cancer & immune damage',
   'Bisphenol A (BPA)':'Endocrine disruptor · leaches from packaging',
-  'Styrene':'Possible carcinogen · nervous system effects',
-  'Benzene':'IARC Group 1 carcinogen · bone marrow damage',
-  'Toluene':'Neurotoxin · reproductive hazard',
 };
-
-// ── AI CALLS ──
-function repairJSON(txt){
-  try{JSON.parse(txt);return txt;}catch(e){}
-  let out=txt.replace(/,\s*$/,'');
-  const ob=(out.match(/\{/g)||[]).length-(out.match(/\}/g)||[]).length;
-  const ab=(out.match(/\[/g)||[]).length-(out.match(/\]/g)||[]).length;
-  for(let i=0;i<ab;i++)out+=']';
-  for(let i=0;i<ob;i++)out+='}';
-  return out;
-}
-
-const SYS=`You are a toxicity-analysis AI in a grocery store scanner app.
-Analyse the image. Identify every visible consumer product (food, drinks, cleaning products, laundry, personal care, household chemicals, etc).
-For each product assess toxicity of its known ingredients/chemicals.
-
-Return ONLY raw valid JSON, no markdown:
-{"products":[{"name":"...","brand":"...","threat":"high|med|low|clean","flags":["Substance"],"verdict":"One sentence.","position":{"x":0.0,"y":0.0,"w":0.0,"h":0.0},"polygon":[[x,y],[x,y],...]}]}
-
-Rules:
-- position: 0-1 fractions (x=left,y=top,w=width,h=height)
-- polygon: 6-8 [x,y] points tracing product silhouette clockwise, 0-1 fractions. Be accurate to the product shape.
-- threat: high=carcinogens/endocrine disruptors, med=concerning, low=minor, clean=none
-- flags: Red 40, Yellow 5, Yellow 6, Blue 1, BHT, BHA, TBHQ, HFCS, Sodium Benzoate, Potassium Bromate, Carrageenan, Aspartame, Caramel Color 4-MEI, Azodicarbonamide, MSG, Titanium Dioxide, Acesulfame-K, Sucralose, Sodium Lauryl Sulfate, Sodium Laureth Sulfate, 1,4-Dioxane, Quaternary Ammonium Compounds, Chlorine Bleach, Formaldehyde Releasers, Triclosan, Artificial Fragrance, Phthalates, Parabens, Oxybenzone, PFAS, Bisphenol A (BPA)
-- No products visible: {"products":[]}`;
-
-async function callGemini(b64){
-  const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  let res;
-  try{ res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-    system_instruction:{parts:[{text:SYS}]},
-    contents:[{role:'user',parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:'Identify all products. Return JSON only.'}]}],
-    generationConfig:{temperature:0.1,maxOutputTokens:8000}
-  })}); }catch(e){ throw new Error('Network error — check connection.'); }
-
-  const data=await res.json().catch(()=>null);
-  if(!res.ok){
-    const m=data?.error?.message||`Gemini ${res.status}`;
-    if(res.status===429) throw new Error('Rate limit — wait 60s and try again.');
-    if(res.status===404) throw new Error('Model not found — contact support.');
-    throw new Error(m);
-  }
-  if(!data?.candidates?.length){
-    const br=data?.promptFeedback?.blockReason||'no candidates';
-    throw new Error(`Blocked: ${br}`);
-  }
-  let txt=data.candidates[0]?.content?.parts?.[0]?.text||'';
-  txt=txt.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
-  if(!txt) throw new Error('Empty response from Gemini.');
-  txt=repairJSON(txt);
-  try{ return JSON.parse(txt).products||[]; }
-  catch(e){ throw new Error(`Parse error: ${txt.slice(0,100)}`); }
-}
-
-async function callClaude(b64){
-  let res;
-  try{ res=await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8000,system:SYS,
-      messages:[{role:'user',content:[
-        {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
-        {type:'text',text:'Identify all products. Return JSON only.'}
-      ]}]
-    })
-  }); }catch(e){ throw new Error('Network error — check connection.'); }
-
-  const data=await res.json().catch(()=>null);
-  if(!res.ok){
-    if(res.status===401) throw new Error('Invalid API key.');
-    if(res.status===429) throw new Error('Rate limit — wait a moment.');
-    throw new Error(data?.error?.message||`Claude ${res.status}`);
-  }
-  let txt=(data?.content||[]).map(b=>b.text||'').join('').trim();
-  txt=txt.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
-  txt=repairJSON(txt);
-  try{ return JSON.parse(txt).products||[]; }
-  catch(e){ throw new Error(`Parse error: ${txt.slice(0,100)}`); }
-}
-
-// ── UI ──
-function setPill(cls,txt){
-  const p=document.getElementById('pill');
-  p.className=cls;
-  document.getElementById('pilltext').textContent=txt;
-}
-
-function updateTally(){
-  const t=document.getElementById('tally');
-  t.innerHTML='';
-  const h=products.filter(p=>p.threat==='high').length;
-  const m=products.filter(p=>p.threat==='med').length;
-  const s=products.filter(p=>p.threat==='low'||p.threat==='clean').length;
-  if(h)t.innerHTML+=`<span class="tb h">☠ ${h} TOXIC</span>`;
-  if(m)t.innerHTML+=`<span class="tb m">⚠ ${m} CAUTION</span>`;
-  if(s)t.innerHTML+=`<span class="tb s">✓ ${s} OK</span>`;
-}
-
-function showErr(msg){
-  const e=document.getElementById('err');
-  document.getElementById('emsg').textContent=msg;
-  e.style.display='block';
-  requestAnimationFrame(()=>e.classList.add('show'));
-  clearTimeout(window._et);
-  window._et=setTimeout(hideErr,12000);
-}
-function hideErr(){
-  const e=document.getElementById('err');
-  e.classList.remove('show');
-  setTimeout(()=>{e.style.display='none';},300);
-}
 </script>
 </body>
 </html>
