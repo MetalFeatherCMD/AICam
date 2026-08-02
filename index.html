@@ -714,7 +714,21 @@ async function callGemini(b64, mode){
     const {pick}=await pickModel().catch(()=>({pick:null}));
     if(pick) res=await geminiOnce(b64, mode, MODEL);
   }
-  if(res.status===429){ const e=new Error("rate"); e.code=429; throw e; }
+  if(res.status===429){
+    let delay=45, reason="";
+    try{
+      const ra=res.headers&&res.headers.get&&res.headers.get("Retry-After");
+      if(ra&&!isNaN(+ra)) delay=+ra;
+      const body=await res.json();
+      const msg=body?.error?.message||"";
+      reason = /per.?minute|per minute/i.test(msg) ? "per-minute limit"
+             : /per.?day|per day|daily/i.test(msg) ? "daily limit" : "";
+      const ri=(body?.error?.details||[]).find(d=>/RetryInfo/i.test(d["@type"]||""));
+      const sec=ri&&ri.retryDelay?parseInt(ri.retryDelay,10):NaN;
+      if(sec>0) delay=Math.min(sec,120);
+    }catch(_){}
+    const e=new Error("rate"); e.code=429; e.delay=delay; e.reason=reason; throw e;
+  }
   if(!res.ok){ const e=new Error("http "+res.status); e.code=res.status; throw e; }
   const data=await res.json();
   const text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
@@ -769,10 +783,17 @@ function scan(){
   callGemini(b64, scanMode)
     .then(dets=>finish(ingestDetections(dets)))
     .catch(err=>{
-      if(err.code===429) startCooldown(60);
-      fail(err.code===429 ? "Rate limited — cooling down." :
-           err.message==="bad-json" ? "Couldn't read the response. Try again." :
-           "Scan failed"+(err.code?` (${err.code})`:"")+".");
+      if(err.code===429){
+        startCooldown(err.delay||45);
+        fail(err.reason==="daily limit"
+          ? "Daily free-tier limit reached — try later, or add billing to the key's project."
+          : `Rate limited${err.reason?" ("+err.reason+")":""} — retrying in ${err.delay||45}s.`);
+      } else {
+        fail(err.message==="bad-json" ? "Couldn't read the response. Try again." :
+             err.code===400 ? "Bad request (400) — the image or key may be invalid." :
+             err.code===403 ? "Access denied (403) — enable the Generative Language API for this key." :
+             "Scan failed"+(err.code?` (${err.code})`:"")+".");
+      }
     });
 }
 
