@@ -715,19 +715,26 @@ async function callGemini(b64, mode){
     if(pick) res=await geminiOnce(b64, mode, MODEL);
   }
   if(res.status===429){
-    let delay=45, reason="";
+    let delay=45, reason="", zero=false, raw="", metric="";
     try{
       const ra=res.headers&&res.headers.get&&res.headers.get("Retry-After");
       if(ra&&!isNaN(+ra)) delay=+ra;
       const body=await res.json();
-      const msg=body?.error?.message||"";
-      reason = /per.?minute|per minute/i.test(msg) ? "per-minute limit"
-             : /per.?day|per day|daily/i.test(msg) ? "daily limit" : "";
-      const ri=(body?.error?.details||[]).find(d=>/RetryInfo/i.test(d["@type"]||""));
+      raw = body?.error?.message||"";
+      const details = body?.error?.details||[];
+      const qf = details.find(d=>/QuotaFailure/i.test(d["@type"]||""));
+      const viol = qf&&qf.violations&&qf.violations[0];
+      metric = (viol&&(viol.quotaId||viol.quotaMetric))||"";
+      const qval = viol&&viol.quotaValue!=null?String(viol.quotaValue):"";
+      zero = qval==="0" || /limit:\s*0\b/i.test(raw) || (/free_tier/i.test(metric)&&qval==="0");
+      reason = zero ? "quota 0"
+             : /per.?day|\bday\b|daily/i.test(metric+" "+raw) ? "daily limit"
+             : /per.?minute|\bminute\b/i.test(metric+" "+raw) ? "per-minute limit" : "";
+      const ri=details.find(d=>/RetryInfo/i.test(d["@type"]||""));
       const sec=ri&&ri.retryDelay?parseInt(ri.retryDelay,10):NaN;
       if(sec>0) delay=Math.min(sec,120);
     }catch(_){}
-    const e=new Error("rate"); e.code=429; e.delay=delay; e.reason=reason; throw e;
+    const e=new Error("rate"); e.code=429; e.delay=delay; e.reason=reason; e.zero=zero; e.raw=raw; e.metric=metric; throw e;
   }
   if(!res.ok){ const e=new Error("http "+res.status); e.code=res.status; throw e; }
   const data=await res.json();
@@ -783,15 +790,21 @@ function scan(){
   callGemini(b64, scanMode)
     .then(dets=>finish(ingestDetections(dets)))
     .catch(err=>{
+      if(err.raw) console.warn("Gemini error:", err.code, err.metric||"", err.raw);
       if(err.code===429){
-        startCooldown(err.delay||45);
-        fail(err.reason==="daily limit"
-          ? "Daily free-tier limit reached — try later, or add billing to the key's project."
-          : `Rate limited${err.reason?" ("+err.reason+")":""} — retrying in ${err.delay||45}s.`);
+        if(err.zero){
+          fail("Free-tier quota is 0 for this key — Google hasn't validated it for free use. Enable billing on the key's Cloud project (low volume stays free) or make a new key, then tap Detect. Waiting won't help."
+               + (err.metric?" ["+err.metric+"]":""));
+        } else if(err.reason==="daily limit"){
+          fail("Daily free-tier limit reached for this model — Google cut free daily limits hard in Dec 2025. Resets ~midnight Pacific, or try a different model via Detect.");
+        } else {
+          startCooldown(err.delay||45);
+          fail(`Rate limited${err.reason?" ("+err.reason+")":""} — retry in ${err.delay||45}s.`);
+        }
       } else {
         fail(err.message==="bad-json" ? "Couldn't read the response. Try again." :
              err.code===400 ? "Bad request (400) — the image or key may be invalid." :
-             err.code===403 ? "Access denied (403) — enable the Generative Language API for this key." :
+             err.code===403 ? "Access denied (403) — enable the Generative Language API for this key's project." :
              "Scan failed"+(err.code?` (${err.code})`:"")+".");
       }
     });
