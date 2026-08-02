@@ -535,6 +535,7 @@ body[data-theme="alchemy"]{color:var(--ink)}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
 /* ============================================================
    LIVE · SCAN — Phase 4 : working camera scaffold
@@ -614,6 +615,7 @@ async function startCamera(){
     feed.srcObject = stream;
     stage.classList.toggle("mirror", facing==="user");
     await feed.play().catch(()=>{});
+    probeFocus();
     gate.classList.remove("on");
     setState("live");
   }catch(err){ showError(err); }
@@ -634,11 +636,23 @@ function showError(err){
   gateBtn.textContent="Retry";
 }
 
-/* ---------- tap-to-focus (visual reticle + best-effort refocus) ---------- */
-async function tryFocus(nx,ny){
+/* ---------- tap-to-focus ----------
+   Honest note: iOS (all browsers) and Firefox do NOT expose camera focus control
+   to web pages. Where unsupported, the reticle is a framing aid only and the
+   device's own continuous autofocus does the focusing. */
+let focusSupported=null;
+function probeFocus(){
+  focusSupported=false;
   if(!stream) return false;
   const track=stream.getVideoTracks()[0];
   if(!track||!track.getCapabilities) return false;
+  let caps={}; try{ caps=track.getCapabilities()||{}; }catch(_){ return false; }
+  focusSupported=!!(caps.focusMode||caps.pointsOfInterest);
+  return focusSupported;
+}
+async function tryFocus(nx,ny){
+  if(!stream||!focusSupported) return false;
+  const track=stream.getVideoTracks()[0];
   let caps={}; try{ caps=track.getCapabilities()||{}; }catch(_){ return false; }
   const adv=[];
   if(caps.focusMode){
@@ -647,18 +661,23 @@ async function tryFocus(nx,ny){
   }
   if(caps.pointsOfInterest && nx!=null)
     adv.push({pointsOfInterest:[{x:Math.max(0,Math.min(1,nx)),y:Math.max(0,Math.min(1,ny))}]});
-  if(!adv.length) return false;                 // platform exposes no focus control (e.g. iOS Safari)
+  if(!adv.length) return false;
   try{ await track.applyConstraints({advanced:adv}); return true; }catch(_){ return false; }
 }
+let focusNoteShown=false;
 stage.addEventListener("click", e=>{
-  if(state==="gate"||state==="error") return;      // gate handles its own button
-  if(state==="frozen"){ resume(); return; }         // tapping the still resumes live
+  if(state==="gate"||state==="error") return;
+  if(state==="frozen"){ resume(); return; }
   if(state!=="live") return;
   const r=stage.getBoundingClientRect();
   const x=e.clientX-r.left, y=e.clientY-r.top;
   reticle.style.left=x+"px"; reticle.style.top=y+"px";
   reticle.classList.remove("show"); void reticle.offsetWidth; reticle.classList.add("show");
-  tryFocus(x/r.width, y/r.height);
+  if(focusSupported) tryFocus(x/r.width, y/r.height);
+  else if(!focusNoteShown){
+    focusNoteShown=true;
+    toast("This browser can't control camera focus — your phone autofocuses on its own. Hold steady, or move slightly closer/further.");
+  }
 });
 
 /* ---------- capture (center-crop to a square = what the viewport shows) ---------- */
@@ -826,7 +845,79 @@ function boxForAlias(words, alias, scale, W, H){
            w:Math.min(100,(x1-x0+2*pad)/scale/W*100), h:Math.min(100,(y1-y0+2*pad)/scale/H*100) };
 }
 
+/* ---- barcode: decode locally (ZXing works in Firefox/Safari; the native API doesn't) ---- */
+let zxReader=null;
+async function decodeBarcode(){
+  try{
+    if(typeof ZXing==="undefined") return null;
+    if(!zxReader) zxReader=new ZXing.BrowserMultiFormatReader();
+    const {canvas}=ocrCanvas();               // contrast-boosted, upscaled frame
+    const img=new Image();
+    img.src=canvas.toDataURL("image/png");
+    await new Promise(r=>{ img.onload=r; img.onerror=r; });
+    const res=await zxReader.decodeFromImageElement(img);
+    return res && res.getText ? res.getText() : null;
+  }catch(_){ return null; }   // "no barcode found" is the normal, expected case
+}
+
+/* ---- Open Food Facts: free, no key, no quota ---- */
+async function lookupBarcode(code){
+  const url=`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,ingredients_text,additives_tags`;
+  const r=await fetch(url,{headers:{"Accept":"application/json"}});
+  if(!r.ok) return null;
+  const j=await r.json();
+  if(!j || j.status===0 || !j.product) return null;    // OFF returns 200 with status 0 when unknown
+  const p=j.product;
+  return { name:[p.brands,p.product_name].filter(Boolean).join(" ").trim()||("Item "+code),
+           text:p.ingredients_text||"", code };
+}
+
+/* build a verdict from any ingredient text + KB */
+function verdictFromText(text, name, srcNote){
+  const hits=matchKB(text);
+  const flags=hits.map(h=>{
+    const e=h.kb;
+    const tier=(e.s==="advocacy" && TIER_RANK[e.t]>TIER_RANK.caution)?"caution":e.t;
+    return {n:e.n,h:e.h,src:e.s==="reg"?"reg":"advocacy",tier};
+  });
+  const worst=flags.reduce((a,f)=>TIER_RANK[f.tier]>TIER_RANK[a]?f.tier:a,"clear");
+  const concerns=flags.filter(f=>f.h);
+  SCAN.summary={ tier:worst, name:name||"Label Analysis", label:VERDICT[worst],
+    sum:(concerns.length? `${concerns.length} flagged ingredient${concerns.length>1?"s":""} found.`
+                        : "No flagged ingredients found.") + (srcNote?" "+srcNote:""),
+    flags:concerns.map(f=>({n:f.n,h:f.h,src:f.src})) };
+  return worst;
+}
+const wholeBox=(tier)=>[{id:"summary",tier,label:VERDICT[tier],x:6,y:6,w:88,h:88}];
+
+async function scanBarcode(){
+  const code=await decodeBarcode();
+  if(!code) return null;
+  setSweepLabel("Barcode "+code+" \u2014 looking up\u2026");
+  let rec=null;
+  try{ rec=await lookupBarcode(code); }catch(_){ rec=null; }
+  if(!rec){
+    SCAN.summary={tier:"caution",name:"Barcode "+code,label:VERDICT.caution,
+      sum:"Barcode read, but this product isn't in the open database. Photograph the ingredients list instead.",flags:[]};
+    return {dets:wholeBox("caution"), summaryId:"summary"};
+  }
+  if(!rec.text){
+    SCAN.summary={tier:"caution",name:rec.name,label:VERDICT.caution,
+      sum:"Found the product, but no ingredient list is on file. Photograph the ingredients instead.",flags:[]};
+    return {dets:wholeBox("caution"), summaryId:"summary"};
+  }
+  const worst=verdictFromText(rec.text, rec.name, "(Open Food Facts)");
+  return {dets:wholeBox(worst), summaryId:"summary"};
+}
+
 async function scanOffline(){
+  setSweepLabel("Checking for barcode\u2026");
+  const bc=await scanBarcode();       // barcodes are fast + precise, try first
+  if(bc) return bc;
+  return scanOCRText();               // otherwise read the label text
+}
+
+async function scanOCRText(){
   const {canvas,scale}=ocrCanvas();
   const worker=await getOCR(m=>{
     if(m.status==="recognizing text") setSweepLabel(`Reading label ${Math.round((m.progress||0)*100)}%`);
