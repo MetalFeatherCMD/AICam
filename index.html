@@ -227,6 +227,7 @@ body{font-family:var(--font-ui);color:var(--ui);display:flex;align-items:center;
 #keyscreen button.ghost{border-color:var(--line);color:var(--ui-dim);background:none}
 [data-theme="alchemy"] #keyscreen button.primary,[data-theme="alchemy"] #keyscreen button.ghost{border-radius:2px}
 #keyStatus{font-family:var(--font-ui);font-size:11px;letter-spacing:.5px;color:var(--ui-dim);min-height:14px}
+#modelLine{font-family:var(--font-ui);font-size:11px;letter-spacing:.5px;color:var(--ui);min-height:14px;word-break:break-all;max-width:284px}
 #keyDemo{font-family:var(--font-ui);font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--ui-dim);
   cursor:pointer;background:none;border:none;text-decoration:underline}
 
@@ -389,7 +390,7 @@ body[data-theme="alchemy"]{color:var(--ink)}
 <body data-theme="console">
 
 <div id="wrap">
-  <div id="ribbon">Phase 4 · live camera · dummy boxes · no API yet</div>
+  <div id="ribbon">Live Scan · Gemini vision · free tier</div>
 
   <!-- TOP -->
   <div id="top">
@@ -482,9 +483,11 @@ body[data-theme="alchemy"]{color:var(--ink)}
     <input id="keyInput" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false">
     <div class="key-actions">
       <button id="keySave" class="primary">Save</button>
+      <button id="detectBtn" class="ghost">Detect models</button>
       <button id="keyClear" class="ghost">Clear</button>
     </div>
     <div id="keyStatus"></div>
+    <div id="modelLine"></div>
     <button id="keyDemo">Continue in demo mode</button>
   </div>
 
@@ -660,8 +663,28 @@ function drawBoxes(dets){
 }
 
 /* ===================== GEMINI ENGINE (free tier, user key) ===================== */
-const MODEL="gemini-2.5-flash-lite";   // free tier · 30 RPM · swap to gemini-2.5-flash / gemini-3-flash if desired
+const MODEL_LS="livescan_model";
+let MODEL = (()=>{ try{ return localStorage.getItem(MODEL_LS)||""; }catch(_){ return ""; } })() || "gemini-flash-lite-latest";
+function saveModel(m){ MODEL=m; try{ localStorage.setItem(MODEL_LS,m); }catch(_){} updateModelLine(); }
 const VERDICT={clear:"Clear",caution:"Caution",moderate:"Moderate",harmful:"Avoid"};
+
+/* ask the key which models it can actually use, prefer a free Flash-Lite */
+async function listModels(){
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(getKey())}`);
+  if(!r.ok){ const e=new Error("list "+r.status); e.code=r.status; throw e; }
+  const d=await r.json();
+  return (d.models||[])
+    .filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent"))
+    .map(m=>m.name.replace(/^models\//,""));
+}
+async function pickModel(){
+  const avail=await listModels();
+  const pick = avail.find(n=>/flash-lite/i.test(n)&&!/thinking|preview-tts|image/i.test(n))
+            || avail.find(n=>/flash/i.test(n)&&!/thinking|preview-tts|image/i.test(n))
+            || avail[0];
+  if(pick) saveModel(pick);
+  return {pick, count:avail.length};
+}
 
 function scanPrompt(mode){
   const scope = mode==="ingredients"
@@ -673,8 +696,8 @@ Return STRICT JSON only (no markdown, no prose) of the form:
 Rules: box_2d is [ymin,xmin,ymax,xmax] normalized 0-1000 over THIS image. tier reflects the worst credible concern (regulatory signals like IARC / Prop 65 / EU Annex II / FDA / EFSA / EPA set tier; advocacy-only concerns never exceed "caution"). source is "reg" for regulatory, "advocacy" otherwise. Max 8 detections. If nothing is identifiable, return {"detections":[]}.`;
 }
 
-async function callGemini(b64, mode){
-  const url=`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(getKey())}`;
+async function geminiOnce(b64, mode, model){
+  const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(getKey())}`;
   const body={
     contents:[{role:"user",parts:[
       {inline_data:{mime_type:"image/jpeg",data:b64}},
@@ -682,7 +705,15 @@ async function callGemini(b64, mode){
     ]}],
     generationConfig:{temperature:0.2,maxOutputTokens:1400,responseMimeType:"application/json"}
   };
-  const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  return fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+}
+
+async function callGemini(b64, mode){
+  let res=await geminiOnce(b64, mode, MODEL);
+  if(res.status===404){                         // stale/invalid model name → auto-detect a valid one, retry once
+    const {pick}=await pickModel().catch(()=>({pick:null}));
+    if(pick) res=await geminiOnce(b64, mode, MODEL);
+  }
   if(res.status===429){ const e=new Error("rate"); e.code=429; throw e; }
   if(!res.ok){ const e=new Error("http "+res.status); e.code=res.status; throw e; }
   const data=await res.json();
@@ -903,19 +934,41 @@ function setKey(v){ try{ localStorage.setItem(KEY_LS,v); }catch(_){} }
 function clearKey(){ try{ localStorage.removeItem(KEY_LS); }catch(_){} }
 
 const keyscreen=$("#keyscreen");
+function updateModelLine(){ const el=$("#modelLine"); if(el) el.textContent = getKey()?("Model: "+MODEL):""; }
 function openKeyScreen(){
   const k=getKey();
   $("#keyInput").value=k;
   $("#keyStatus").textContent = k ? "A key is saved on this device." : "No key saved — demo mode shows placeholder boxes.";
   $("#keyClear").style.display = k ? "" : "none";
+  $("#detectBtn").style.display = k ? "" : "none";
+  updateModelLine();
   keyscreen.classList.add("on");
 }
 function closeKeyScreen(){ keyscreen.classList.remove("on"); }
 $("#keyBtn").addEventListener("click",openKeyScreen);
-$("#keySave").addEventListener("click",()=>{
+
+async function detectModels(silent){
+  if(!getKey()){ if(!silent) toast("Save a key first."); return; }
+  $("#keyStatus").textContent="Detecting available models…";
+  try{
+    const {pick,count}=await pickModel();
+    $("#keyStatus").textContent = pick ? `Found ${count} models. Using:` : "No usable models for this key.";
+    updateModelLine();
+    if(pick && !silent) toast("Model set: "+MODEL);
+  }catch(err){
+    $("#keyStatus").textContent = err.code===400||err.code===403 ? "Key rejected — check the key." : "Couldn't list models"+(err.code?` (${err.code})`:"")+".";
+  }
+}
+$("#detectBtn").addEventListener("click",()=>detectModels(false));
+
+$("#keySave").addEventListener("click",async ()=>{
   const v=$("#keyInput").value.trim();
   if(!v){ toast("Enter a key, or choose demo mode."); return; }
-  setKey(v); demoMode=false; closeKeyScreen(); toast("Key saved.");
+  setKey(v); demoMode=false;
+  $("#keyClear").style.display=""; $("#detectBtn").style.display="";
+  await detectModels(true);                 // resolve a valid model now so the first scan won't 404
+  toast(MODEL ? "Key saved · "+MODEL : "Key saved.");
+  closeKeyScreen();
 });
 $("#keyClear").addEventListener("click",()=>{ clearKey(); $("#keyInput").value=""; demoMode=true; openKeyScreen(); });
 $("#keyDemo").addEventListener("click",()=>{ demoMode=true; closeKeyScreen(); });
