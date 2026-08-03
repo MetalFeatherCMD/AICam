@@ -243,6 +243,32 @@ body{font-family:var(--font-ui);color:var(--ui);display:flex;align-items:center;
 #keyDemo{font-family:var(--font-ui);font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--ui-dim);
   cursor:pointer;background:none;border:none;text-decoration:underline}
 
+/* ---- tap-to-expand readout ---- */
+#panel{cursor:pointer}
+#expandHint{position:absolute;top:8px;right:10px;z-index:2;pointer-events:none;opacity:.55;
+  font-family:var(--font-ui);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--ui-dim)}
+[data-theme="vhs"] #expandHint{font-size:11px}
+#expanded{position:absolute;inset:0;z-index:88;display:none;flex-direction:column;padding:14px;
+  background:rgba(3,6,4,.97)}
+[data-theme="alchemy"] #expanded{background:rgba(245,241,232,.98)}
+#expanded.on{display:flex}
+.exp-top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+#expName{font-family:var(--font-disp);font-size:19px;letter-spacing:1px;flex:1;line-height:1.1}
+[data-theme="alchemy"] #expName{font-weight:700;font-size:17px}
+#expTier{font-family:var(--font-disp);letter-spacing:2px;font-size:15px;padding:2px 12px;
+  border:1px solid currentColor;border-radius:5px}
+[data-theme="alchemy"] #expTier{border-radius:2px}
+#expTier.clear{color:var(--clr-clear)}#expTier.caution{color:var(--clr-caution)}
+#expTier.moderate{color:var(--clr-moderate)}#expTier.harmful{color:var(--clr-harmful)}
+#expClose{width:32px;height:32px;font-size:20px;line-height:1;cursor:pointer;font-family:var(--font-ui);
+  color:var(--ui);background:color-mix(in srgb,var(--ui) 10%,transparent);border:1px solid var(--line);border-radius:7px}
+[data-theme="alchemy"] #expClose{border-radius:2px}
+#expBody{flex:1;overflow-y:auto;scrollbar-width:none}
+#expBody::-webkit-scrollbar{display:none}
+#expSum{font-family:var(--font-read);font-size:16px;line-height:1.4;color:var(--ui-dim);
+  padding-bottom:10px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+[data-theme="alchemy"] #expSum{font-style:italic}
+
 /* ---- LIGHTBOX (full-size history review) ---- */
 #lightbox{position:absolute;inset:0;z-index:90;display:none;flex-direction:column;padding:14px;
   background:rgba(0,0,0,.93)}
@@ -275,6 +301,14 @@ body{font-family:var(--font-ui);color:var(--ui);display:flex;align-items:center;
   border-radius:7px;padding:9px 14px;min-width:78px}
 [data-theme="alchemy"] .lb-btn{border-radius:2px}
 .lb-btn:disabled{opacity:.32;cursor:default}
+#lbPanel{flex:1;min-height:70px;overflow-y:auto;scrollbar-width:none;margin-top:10px;padding:11px 13px;
+  background:rgba(3,6,4,.9);border:1px solid var(--panel-line,var(--line));border-radius:8px}
+#lbPanel::-webkit-scrollbar{display:none}
+[data-theme="alchemy"] #lbPanel{background:rgba(245,241,232,.96);border-radius:2px}
+#lbPanel[data-tier="clear"]{--tier:var(--clr-clear)}
+#lbPanel[data-tier="caution"]{--tier:var(--clr-caution)}
+#lbPanel[data-tier="moderate"]{--tier:var(--clr-moderate)}
+#lbPanel[data-tier="harmful"]{--tier:var(--clr-harmful)}
 
 /* ===================== BOTTOM CONTROLS ===================== */
 #bot{position:relative;flex:none;z-index:40;padding:6px 22px 4px;
@@ -450,6 +484,7 @@ body[data-theme="alchemy"]{color:var(--ink)}
   </div>
   <!-- READOUT -->
   <div id="panel" data-tier="clear">
+    <div id="expandHint">Tap to expand</div>
     <div class="p-head">
       <span class="p-name" id="pName">Ready</span>
       <span class="p-verdict" id="pTier">Standby</span>
@@ -488,6 +523,19 @@ body[data-theme="alchemy"]{color:var(--ink)}
 
   <!-- sticky error / info toast (tap to dismiss) -->
   <div id="toast"></div>
+
+  <!-- expanded readout (tap the panel) -->
+  <div id="expanded">
+    <div class="exp-top">
+      <span id="expName"></span>
+      <span id="expTier"></span>
+      <button id="expClose" aria-label="Close">&times;</button>
+    </div>
+    <div id="expBody">
+      <div id="expSum"></div>
+      <div id="expFlags"></div>
+    </div>
+  </div>
 
   <!-- API key screen -->
   <div id="keyscreen">
@@ -530,6 +578,14 @@ body[data-theme="alchemy"]{color:var(--ink)}
       <button id="lbPrev" class="lb-btn">&lsaquo; Newer</button>
       <span id="lbMeta"></span>
       <button id="lbNext" class="lb-btn">Older &rsaquo;</button>
+    </div>
+    <div id="lbPanel">
+      <div class="p-head">
+        <span class="p-name" id="lbName"></span>
+        <span class="p-verdict" id="lbTier"></span>
+      </div>
+      <div class="p-sum" id="lbSum"></div>
+      <div id="lbFlags"></div>
     </div>
   </div>
 </div>
@@ -888,7 +944,7 @@ function verdictFromText(text, name, srcNote){
     flags:concerns.map(f=>({n:f.n,h:f.h,src:f.src})) };
   return worst;
 }
-const wholeBox=(tier)=>[{id:"summary",tier,label:VERDICT[tier],x:6,y:6,w:88,h:88}];
+const wholeBox=(tier,label)=>[{id:"summary",tier,label:label||VERDICT[tier],x:6,y:6,w:88,h:88}];
 
 async function scanBarcode(){
   const code=await decodeBarcode();
@@ -897,14 +953,14 @@ async function scanBarcode(){
   let rec=null;
   try{ rec=await lookupBarcode(code); }catch(_){ rec=null; }
   if(!rec){
-    SCAN.summary={tier:"caution",name:"Barcode "+code,label:VERDICT.caution,
+    SCAN.summary={tier:"caution",name:"Barcode "+code,label:"No Data",nodata:true,
       sum:"Barcode read, but this product isn't in the open database. Photograph the ingredients list instead.",flags:[]};
-    return {dets:wholeBox("caution"), summaryId:"summary"};
+    return {dets:wholeBox("caution","No Data"), summaryId:"summary"};
   }
   if(!rec.text){
-    SCAN.summary={tier:"caution",name:rec.name,label:VERDICT.caution,
+    SCAN.summary={tier:"caution",name:rec.name,label:"No Data",nodata:true,
       sum:"Found the product, but no ingredient list is on file. Photograph the ingredients instead.",flags:[]};
-    return {dets:wholeBox("caution"), summaryId:"summary"};
+    return {dets:wholeBox("caution","No Data"), summaryId:"summary"};
   }
   const worst=verdictFromText(rec.text, rec.name, "(Open Food Facts)");
   return {dets:wholeBox(worst), summaryId:"summary"};
@@ -1073,6 +1129,7 @@ function scan(){
     const showId=(focusId && SCAN[focusId])?focusId:worst.id;
     render(showId);
     addHistory({ full:frameURL(960), dets:dets.map(d=>({...d})),
+      readouts:JSON.parse(JSON.stringify(SCAN)), focus:showId,
       tier:worst.tier, verdict:worst.label, name:(SCAN[showId]||{}).name||"Scan", t:Date.now() });
   };
   const fail=(msg)=>{ sweep.classList.remove("on"); shutter.classList.remove("busy"); setSweepLabel(""); setState("frozen"); toast(msg,true); };
@@ -1117,7 +1174,7 @@ function scan(){
 }
 
 function clearPanel(){
-  const p=$("#panel"); p.dataset.tier="clear";
+  const p=$("#panel"); p.dataset.tier="clear"; p._current=null;
   $("#pName").textContent="Ready";
   $("#pTier").textContent="Standby";
   $("#pSum").textContent="Point the camera at a product and press the shutter to scan.";
@@ -1213,17 +1270,35 @@ function openLightbox(i){ lbIndex=i; renderLightbox(); lightbox.classList.add("o
 function closeLightbox(){ lightbox.classList.remove("on"); lbIndex=-1; }
 function lbNav(d){ const n=lbIndex+d; if(n>=0 && n<history.length){ lbIndex=n; renderLightbox(); } }
 
+function lbReadout(r,id){
+  const p=$("#lbPanel");
+  const it=(r.readouts&&r.readouts[id]) || (r.readouts&&r.readouts[r.focus]) ||
+           (r.readouts&&r.readouts[Object.keys(r.readouts)[0]]);
+  if(!it){ p.style.display="none"; return; }
+  p.style.display="";
+  p.dataset.tier=it.tier;
+  $("#lbName").textContent=it.name;
+  $("#lbTier").textContent=it.label;
+  $("#lbSum").textContent=it.sum;
+  $("#lbFlags").innerHTML=flagsHTML(it);
+  $("#lbBoxes").querySelectorAll(".item").forEach(el=>el.classList.toggle("selected",el.dataset.id===id));
+}
+
 function renderLightbox(){
   const r=history[lbIndex]; if(!r) return;
   lbImg.style.backgroundImage = r.full?`url(${r.full})`:"none";
   lbBoxes.innerHTML = r.dets.map(d=>
-    `<div class="item ${d.tier}" style="left:${d.x}%;top:${d.y}%;width:${d.w}%;height:${d.h}%">
+    `<div class="item ${d.tier}" data-id="${d.id}" style="left:${d.x}%;top:${d.y}%;width:${d.w}%;height:${d.h}%">
        <div class="bbox"></div><div class="bbox-tag">${d.label}</div></div>`).join("");
+  lbBoxes.style.pointerEvents="auto";
+  lbBoxes.querySelectorAll(".item").forEach(el=>
+    el.addEventListener("click",e=>{ e.stopPropagation(); lbReadout(r, el.dataset.id); }));
   lbVerdict.textContent=r.verdict; lbVerdict.className="lb-verdict "+r.tier;
   lbCount.textContent=`${lbIndex+1} / ${history.length}`;
   lbMeta.textContent=`${r.name} · ${new Date(r.t).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`;
   lbPrev.disabled = lbIndex<=0;                 // newer
   lbNext.disabled = lbIndex>=history.length-1;  // older
+  lbReadout(r, r.focus);
 }
 
 async function lbDeleteCurrent(){
@@ -1243,6 +1318,7 @@ lbClose.addEventListener("click",closeLightbox);
 lbDelete.addEventListener("click",lbDeleteCurrent);
 lightbox.addEventListener("click",e=>{ if(e.target===lightbox) closeLightbox(); });
 document.addEventListener("keydown",e=>{
+  if(expanded.classList.contains("on")){ if(e.key==="Escape") closeExpanded(); return; }
   if(!lightbox.classList.contains("on")) return;
   if(e.key==="Escape") closeLightbox();
   else if(e.key==="ArrowLeft") lbNav(-1);
@@ -1251,18 +1327,27 @@ document.addEventListener("keydown",e=>{
 
 /* ---------- panel readout ---------- */
 const SCAN={};    // id -> {tier,name,label,sum,flags:[{n,h,src}]}
+
+function flagsHTML(it){
+  if(it.flags && it.flags.length){
+    return it.flags.map(x=>`<div class="flag ${x.src}"><span class="fdot"></span><div>
+        <div class="fn">${x.n}<span class="src">${x.src==='reg'?'Regulatory':'Advocacy'}</span></div>
+        <div class="fh">${x.h}</div></div></div>`).join("");
+  }
+  if(it.nodata) return `<div class="p-empty">No ingredient data — nothing could be assessed.</div>`;
+  if(it.tier==="clear") return `<div class="p-empty">Clear — nothing flagged.</div>`;
+  return `<div class="p-empty">No individual ingredients listed for this result.</div>`;
+}
+
 function render(id){
   const it=SCAN[id]||ITEMS[id]; if(!it) return;
   const p=$("#panel");
   p.dataset.tier=it.tier;
+  p._current=it;
   $("#pName").textContent=it.name;
   $("#pTier").textContent=it.label;
   $("#pSum").textContent=it.sum;
-  $("#pFlags").innerHTML = it.flags.length
-    ? it.flags.map(x=>`<div class="flag ${x.src}"><span class="fdot"></span><div>
-        <div class="fn">${x.n}<span class="src">${x.src==='reg'?'Regulatory':'Advocacy'}</span></div>
-        <div class="fh">${x.h}</div></div></div>`).join("")
-    : `<div class="p-empty">Clear — nothing flagged.</div>`;
+  $("#pFlags").innerHTML=flagsHTML(it);
   boxesEl.querySelectorAll(".item").forEach(el=>el.classList.toggle("selected",el.dataset.id===id));
 }
 
@@ -1359,6 +1444,29 @@ function startCooldown(sec){
   };
   tick(); cdTimer=setInterval(tick,200);
 }
+
+/* ---------- expanded readout ---------- */
+const expanded=$("#expanded");
+function openExpanded(it){
+  if(!it) return;
+  $("#expName").textContent=it.name;
+  $("#expTier").textContent=it.label;
+  $("#expTier").className=it.tier;
+  $("#expSum").textContent=it.sum;
+  $("#expFlags").innerHTML=flagsHTML(it);
+  expanded.classList.add("on");
+}
+function closeExpanded(){ expanded.classList.remove("on"); }
+$("#panel").addEventListener("click",()=>{ const it=$("#panel")._current; if(it) openExpanded(it); });
+$("#lbPanel").addEventListener("click",e=>{
+  e.stopPropagation();
+  const r=history[lbIndex]; if(!r||!r.readouts) return;
+  const name=$("#lbName").textContent;
+  const it=Object.values(r.readouts).find(x=>x.name===name)||r.readouts[r.focus];
+  if(it) openExpanded(it);
+});
+$("#expClose").addEventListener("click",e=>{ e.stopPropagation(); closeExpanded(); });
+expanded.addEventListener("click",e=>{ if(e.target===expanded) closeExpanded(); });
 
 /* ---------- controls ---------- */
 gateBtn.addEventListener("click", startCamera);
